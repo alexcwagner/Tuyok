@@ -9,32 +9,36 @@
 // ============================================================================
 
 struct Layer {
-    BUFF_VEC3 semiaxes;        // offset 0
-    BUFF_REAL average_radius;  // offset 32 (b/c, vec3 has 8 extra bytes for alignment)
-    BUFF_REAL density;         // offset 40
+    BUFF_REAL a;
+    BUFF_REAL b;
+    BUFF_REAL c;
+    BUFF_REAL volumetric_radius;
+    BUFF_REAL density;
 };
 
 struct Model {
-    BUFF_REAL angular_momentum;
-    uint num_layers;
-    Layer layers[20];
+    BUFF_REAL angular_momentum;  // offset 0
+    uint num_layers;             // offset 8
+    // implicit 20 bytes padding here
+    Layer layers[20];            // offset 32
     
-    BUFF_REAL rel_equipotential_err;
-    BUFF_REAL total_energy;
+    BUFF_REAL rel_equipotential_err;  // offset 1312
+    BUFF_REAL total_energy;           // offset 1320
+    // implicit 16 bytes padding here
 };
 
 // ============================================================================
 // Buffers
 // ============================================================================
 
-// Input: The template model
+// Input: The template model (flexible array, so slightly different layout)
 layout(std430, binding = 0) buffer InputModel 
 {
     double template_angular_momentum;  // offset 0, 8 bytes
     uint template_num_layers;          // offset 8, 4 bytes
-    uint _pad0;                         // offset 12, 4 bytes
-    double _pad1[2];                    // offset 16, 16 bytes (align to 32)
-    Layer template_layers[];           // offset 32
+    uint _pad0;                        // offset 12, 4 bytes (explicit)
+    double _pad1[2];                   // offset 16, 16 bytes (to align to 32)
+    Layer template_layers[];           // offset 32, flexible array
 };
 
 // Output: N variations of the model
@@ -49,8 +53,6 @@ layout(std430, binding = 1) buffer OutputModels {
 uniform double annealing_temperature;
 uniform uint num_variations;  // N
 uniform uint seed;
-
-
 
 // ============================================================================
 // Main Compute Shader
@@ -76,41 +78,38 @@ void main() {
     variation.angular_momentum = template_angular_momentum;
     
     // Copy template layers
-    for (uint i = 0; i < template_num_layers; i++) {
-        variation.layers[i] = template_layers[i];
-    }
+    //for (uint i = 0; i < template_num_layers; i++) {
+    //    variation.layers[i] = template_layers[i];
+    //}
     
     // ========================================================================
-    // TODO: APPLY VARIATIONS HERE
+    // APPLY VARIATIONS
     // ========================================================================
     for (uint i = 0; i < template_num_layers; i++)
     {
+        variation.layers[i].volumetric_radius = template_layers[i].volumetric_radius;
+        variation.layers[i].density = template_layers[i].density;
+        
         float rand1 = pcg_float(rng);
         float rand2 = pcg_float(rng);
         float rand3 = pcg_float(rng);
-        float avg = (rand1 + rand2 + rand3) / 3.;
         
-        BUFF_REAL mul1 = BR(exp2( (1.-rand1) * float(annealing_temperature) ));
-        BUFF_REAL mul2 = BR(exp2( (1.-rand2) * float(annealing_temperature) ));
-        BUFF_REAL mul3 = BR(1.LF) / (mul1 * mul2);
+        BUFF_REAL mul1 = BR(exp2( (rand1 - 0.5) * float(annealing_temperature) ));
+        BUFF_REAL mul2 = BR(exp2( (rand2 - 0.5) * float(annealing_temperature) ));
+        BUFF_REAL mul3 = BR(1.LF) / (mul1 * mul2);  // Preserve volume
         
-//         variation.layers[i].semiaxes[0] *= mul1;
-//         variation.layers[i].semiaxes[1] *= mul2;
-//         variation.layers[i].semiaxes[2] *= mul3;
-        //variation.layers[i].semiaxes[0] = template_layers[i].semiaxes[0] + 100.LF;
-        //variation.layers[i].semiaxes[1] = template_layers[i].semiaxes[1] + 200.LF;
-        //variation.layers[i].semiaxes[2] = template_layers[i].semiaxes[2] + 300.LF;
+        variation.layers[i].a = template_layers[i].a; // * mul1;
+        variation.layers[i].b = template_layers[i].b; // * mul2;
+        variation.layers[i].c = template_layers[i].c; // * mul3;
+        
     }
     
     // ========================================================================
-    // TODO: SCORE THE VARIATION HERE
+    // SCORE THE VARIATION (placeholder)
     // ========================================================================
-    // Example (you'll implement the actual scoring logic):
-    // variation.score = score_model(variation);
-    variation.rel_equipotential_err = BUFF_REAL(0.0);  // Placeholder
+    variation.rel_equipotential_err = BUFF_REAL(0.0);
     variation.total_energy = BUFF_REAL(0.0);
     
     // Write output
     variations[idx] = variation;
-    
 }

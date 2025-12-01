@@ -7,7 +7,6 @@ Created on Sun Nov 30 18:19:59 2025
 
 from compute_harness import GLSLComputeHarness, ShaderConfig, BufferSpec, UniformSpec
 import numpy as np
-import time
 import struct
 
 harness = GLSLComputeHarness()
@@ -19,92 +18,93 @@ def test_variations():
     config = ShaderConfig.precision_config("double", "double")
     program = harness.create_program("shader/explore_variations.glsl.c", config)
     
-    N = 1_000
+    N = 5
     
     angular_momentum = 4.01
     layers = [
         {
             'semiaxes': (0.99, 1., 1.01),
-            'average_radius': 1.,
+            'volumetric_radius': 1.,
             'density': 1.05,
         },
         {
             'semiaxes': (1.98, 2., 2.02),
-            'average_radius': 2.,
+            'volumetric_radius': 2.,
             'density': 2.10,
         },
         {
             'semiaxes': (2.97, 3., 3.03),
-            'average_radius': 3.,
+            'volumetric_radius': 3.,
             'density': 3.15,
         }
     ]
    
-    # ========================================================================
-    # Pack input buffer to match GLSL std430 layout
-    # ========================================================================
-    
-    # Header: double + uint + uint = 16 bytes
-    # But layers need 32-byte alignment for dvec3, so we need padding to 32
-    input_bytes = struct.pack('dII',  # 16 bytes
+
+    # Header: 32 bytes total
+    input_bytes = struct.pack('dI',  # double + uint = 12 bytes
                               angular_momentum,
-                              len(layers),
-                              0)  # padding
-    # Add 16 more bytes of padding to reach 32-byte alignment for first layer
-    input_bytes += struct.pack('dd', 0.0, 0.0)  # 16 bytes padding -> total 32
+                              len(layers))
+    input_bytes += b'\x00' * 20  # 20 bytes padding to reach offset 32
 
     for layer in layers:
-        # Layer in std430 with dvec3:
-        #   dvec3 semiaxes:      offset 0,  24 bytes data + 8 bytes padding = 32
-        #   double avg_radius:   offset 32, 8 bytes
-        #   double density:      offset 40, 8 bytes
-        #   Total: 48 bytes per layer
-        input_bytes += struct.pack('dddddd',  # 48 bytes
-                               layer['semiaxes'][0],
-                               layer['semiaxes'][1],
-                               layer['semiaxes'][2],
-                               0.0,  # padding after dvec3
-                               layer['average_radius'],
-                               layer['density'])
+        # Layer: 64 bytes each
+        input_bytes += struct.pack('ddddd',  # 8 doubles = 64 bytes
+                               layer['semiaxes'][0],    # offset 0
+                               layer['semiaxes'][1],    # offset 8
+                               layer['semiaxes'][2],    # offset 16
+                               #0.0,                     # offset 24 (dvec3 padding)
+                               layer['volumetric_radius'], # offset 32
+                               layer['density'],        # offset 40
+                               #0.0,                     # offset 48 (struct padding)
+                               #0.0)                     # offset 56 (struct padding)
+                               )
 
     input_array = np.frombuffer(input_bytes, dtype=np.uint8)
     
     print(f"Input buffer size: {len(input_array)} bytes")
+    print(f"  Expected: 32 + {len(layers)} * 64 = {32 + len(layers) * 64} bytes")
     
     # ========================================================================
     # Define output buffer dtype to match GLSL std430 layout
     # ========================================================================
     
-    # Layer: 48 bytes
     layer_dtype = np.dtype([
-        ('semiaxes', np.float64, (3,)),   # 24 bytes
-        ('_pad0', np.float64),            # 8 bytes padding (dvec3 -> 32)
-        ('average_radius', np.float64),   # 8 bytes
-        ('density', np.float64)           # 8 bytes
-    ])  # Total: 48 bytes
+        ('a', np.float64),
+        ('b', np.float64),
+        ('c', np.float64),
+        ('volumetric_radius', np.float64),
+        ('density', np.float64),         
+        #('_pad_struct', np.float64, (2,))
+    ])
     
-    # Model struct in GLSL:
-    #   double angular_momentum   offset 0   (8 bytes)
-    #   uint num_layers           offset 8   (4 bytes)
-    #   <padding>                 offset 12  (4 bytes to align to 8)
-    #   <padding>                 offset 16  (16 bytes to align layers to 32)
-    #   Layer layers[20]          offset 32  (20 * 48 = 960 bytes)
-    #   double rel_equi_err       offset 992 (8 bytes)
-    #   double total_energy       offset 1000 (8 bytes)
-    # Total: 1008 bytes
+    # Model struct layout:
+    #   offset 0:    double angular_momentum (8 bytes)
+    #   offset 8:    uint num_layers (4 bytes)
+    #   offset 12:   padding (20 bytes to align to 32)
+    #   offset 32:   Layer layers[20] (20 * 64 = 1280 bytes)
+    #   offset 1312: double rel_equipotential_err (8 bytes)
+    #   offset 1320: double total_energy (8 bytes)
+    #   Total: 1328 bytes, rounded to 1344 for struct alignment
     
     model_dtype = np.dtype([
-        ('angular_momentum', np.float64),      # 8 bytes, offset 0
-        ('num_layers', np.uint32),             # 4 bytes, offset 8
-        ('_pad0', np.uint32),                  # 4 bytes, offset 12
-        ('_pad1', np.float64, (2,)),           # 16 bytes padding, offset 16
-        ('layers', layer_dtype, (20,)),        # 960 bytes, offset 32
-        ('rel_equipotential_err', np.float64), # 8 bytes, offset 992
-        ('total_energy', np.float64)           # 8 bytes, offset 1000
-    ])  # Total: 1008 bytes
+        ('angular_momentum', np.float64),      # 8 bytes at offset 0
+        ('num_layers', np.uint32),             # 4 bytes at offset 8
+        ('_pad_to_32', np.uint8, (4,)),       # 20 bytes at offset 12
+        ('layers', layer_dtype, (20,)),        # 1280 bytes at offset 32
+        ('rel_equipotential_err', np.float64), # 8 bytes at offset 1312
+        ('total_energy', np.float64),          # 8 bytes at offset 1320
+        #('_pad_struct', np.uint8, (16,))       # 16 bytes to reach 1344
+    ])
     
-    print(f"Model dtype size: {model_dtype.itemsize} bytes")
-    print(f"Layer dtype size: {layer_dtype.itemsize} bytes")
+    print(f"Model dtype size: {model_dtype.itemsize} bytes (expected 1344)")
+    print(f"Layer dtype size: {layer_dtype.itemsize} bytes (expected 64)")
+    
+    # Verify offsets
+    print("\nModel dtype field offsets:")
+    for name in model_dtype.names:
+        offset = model_dtype.fields[name][1]
+        size = model_dtype.fields[name][0].itemsize
+        print(f"  {name}: offset {offset}, size {size}")
     
     # ========================================================================
     # Define buffers
@@ -129,28 +129,30 @@ def test_variations():
     uniforms = [
         UniformSpec("num_variations", N, "1ui"),
         UniformSpec("seed", 12345, "1ui"),
-        UniformSpec("annealing_temperature", 1.0, "1d")
+        UniformSpec("annealing_temperature", 0.001, "1d")
     ]    
 
-    print(f"Generating {N} variations...")
+    print(f"\nGenerating {N} variations...")
     results = program.run(buffers, uniforms, num_invocations=N)
     
     variations = results[1]
-    
+    #print(bytes(variations))
     # ========================================================================
     # Examine results
     # ========================================================================
     
+    print(variations[0])
+    print(variations[1])
+    
+    
     print(f"\nFirst 5 variations:")
     for i in range(min(5, N)):
         var = variations[i]
-        #print(var)
         
         ang_mom = var['angular_momentum']
         num_layers = var['num_layers']
         rel_err = var['rel_equipotential_err']
         tot_energy = var['total_energy']
-        
         
         print(f"\nVariation {i}:")
         print(f"  Angular momentum: {ang_mom:.6f}")
@@ -159,23 +161,22 @@ def test_variations():
         print(f"  Total Energy: {tot_energy:.6f}")
         for j in range(min(3, num_layers)):
             layer = var['layers'][j]
-            semiaxes = layer['semiaxes'][0], layer['semiaxes'][1], layer['semiaxes'][2], 
-            avg_radius = layer['average_radius']
+            a, b, c = layer['a'], layer['b'], layer['c']
+            vol_radius = layer['volumetric_radius']
             density = layer['density']
+            
             print(f"  Layer {j}:")
-            print(f"    Semiaxes: "
-                  f"a={semiaxes[0]:.6f}, "
-                  f"b={semiaxes[1]:.6f}, "
-                  f"c={semiaxes[2]:.6f}")
-            print(f"    Avg radius: {avg_radius:.6f}")
+            print(f"    Semiaxes: a={a:.6f}, b={b:.6f}, c={c:.6f}")
+            print(f"    Vol. radius: {vol_radius:.6f}")
             print(f"    Density: {density:.6f}")
+            
     
     # ========================================================================
     # Statistics
     # ========================================================================
     
     first_layers = variations['layers'][:, 0]
-    all_a_values = first_layers['semiaxes'][:, 0]
+    all_a_values = first_layers['a'][:]
     
     print(f"\nStatistics for first layer 'a' semiaxis:")
     print(f"  Mean: {np.mean(all_a_values):.6f}")
