@@ -5,7 +5,7 @@ Created on Sun Nov 30 18:19:59 2025
 @author: alexc
 """
 
-from claude_harness import GLSLComputeHarness, ShaderConfig, BufferSpec, UniformSpec
+from compute_harness import GLSLComputeHarness, ShaderConfig, BufferSpec, UniformSpec
 import numpy as np
 import time
 
