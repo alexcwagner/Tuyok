@@ -92,7 +92,7 @@ class GLSLComputeProgram:
         """Load shader with #include support."""
         def load_lines(filepath):
             lines_out = []
-            with open(filepath, 'r') as fp:
+            with open(filepath, 'r', encoding='utf-8') as fp:
                 for line in fp:
                     stripped = line.strip()
                     if stripped.startswith("#include"):

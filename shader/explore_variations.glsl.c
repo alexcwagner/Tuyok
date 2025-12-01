@@ -98,9 +98,9 @@ void main() {
         BUFF_REAL mul2 = BR(exp2( (rand2 - 0.5) * float(annealing_temperature) ));
         BUFF_REAL mul3 = BR(1.LF) / (mul1 * mul2);  // Preserve volume
         
-        variation.layers[i].a = template_layers[i].a; // * mul1;
-        variation.layers[i].b = template_layers[i].b; // * mul2;
-        variation.layers[i].c = template_layers[i].c; // * mul3;
+        variation.layers[i].a = template_layers[i].a * mul1;
+        variation.layers[i].b = template_layers[i].b * mul2;
+        variation.layers[i].c = template_layers[i].c * mul3;
         
     }
     

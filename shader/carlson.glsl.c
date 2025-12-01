@@ -1,3 +1,7 @@
+#ifndef PRECISION_GLSL
+#define PRECISION_GLSL
+
+
 //#define cbrt(x) (pow(abs((x)), R(1.0LF)/R(3.0LF)))
 
 //========================================================================
@@ -232,3 +236,4 @@ CALC_REAL carlson_rj(CALC_REAL x, CALC_REAL y, CALC_REAL z, CALC_REAL p)
 }
 
 //========================================================================
+#endif
