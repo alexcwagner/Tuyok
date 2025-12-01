@@ -9,9 +9,9 @@
 // ============================================================================
 
 struct Layer {
-    BUFF_VEC3 semiaxes;
-    BUFF_REAL average_radius;
-    BUFF_REAL density;
+    BUFF_VEC3 semiaxes;        // offset 0
+    BUFF_REAL average_radius;  // offset 32 (b/c, vec3 has 8 extra bytes for alignment)
+    BUFF_REAL density;         // offset 40
 };
 
 struct Model {
@@ -30,10 +30,11 @@ struct Model {
 // Input: The template model
 layout(std430, binding = 0) buffer InputModel 
 {
-    BUFF_REAL template_angular_momentum;  // Add this!
-    uint template_num_layers;
-    uint _padding;  // Alignment
-    Layer template_layers[];
+    double template_angular_momentum;  // offset 0, 8 bytes
+    uint template_num_layers;          // offset 8, 4 bytes
+    uint _pad0;                         // offset 12, 4 bytes
+    double _pad1[2];                    // offset 16, 16 bytes (align to 32)
+    Layer template_layers[];           // offset 32
 };
 
 // Output: N variations of the model
@@ -45,7 +46,7 @@ layout(std430, binding = 1) buffer OutputModels {
 // Uniforms
 // ============================================================================
 
-uniform float annealing_temperature;
+uniform double annealing_temperature;
 uniform uint num_variations;  // N
 uniform uint seed;
 
@@ -82,7 +83,7 @@ void main() {
     // ========================================================================
     // TODO: APPLY VARIATIONS HERE
     // ========================================================================
-    for (uint i = 0; i < variation.num_layers; i++)
+    for (uint i = 0; i < template_num_layers; i++)
     {
         float rand1 = pcg_float(rng);
         float rand2 = pcg_float(rng);
@@ -93,9 +94,12 @@ void main() {
         BUFF_REAL mul2 = BR(exp2( (1.-rand2) * float(annealing_temperature) ));
         BUFF_REAL mul3 = BR(1.LF) / (mul1 * mul2);
         
-        variation.layers[i].semiaxes[0] *= mul1;
-        variation.layers[i].semiaxes[1] *= mul2;
-        variation.layers[i].semiaxes[2] *= mul3;
+//         variation.layers[i].semiaxes[0] *= mul1;
+//         variation.layers[i].semiaxes[1] *= mul2;
+//         variation.layers[i].semiaxes[2] *= mul3;
+        //variation.layers[i].semiaxes[0] = template_layers[i].semiaxes[0] + 100.LF;
+        //variation.layers[i].semiaxes[1] = template_layers[i].semiaxes[1] + 200.LF;
+        //variation.layers[i].semiaxes[2] = template_layers[i].semiaxes[2] + 300.LF;
     }
     
     // ========================================================================
