@@ -1,5 +1,5 @@
-#ifndef PRECISION_GLSL
-#define PRECISION_GLSL
+#ifndef CARLSON_GLSL
+#define CARLSON_GLSL
 
 
 //#define cbrt(x) (pow(abs((x)), R(1.0LF)/R(3.0LF)))

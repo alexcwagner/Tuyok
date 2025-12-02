@@ -141,8 +141,8 @@ def test_variations():
     # Examine results
     # ========================================================================
     
-    print(variations[0])
-    print(variations[1])
+    #print(variations[0])
+    #print(variations[1])
     
     
     print(f"\nFirst 5 variations:")

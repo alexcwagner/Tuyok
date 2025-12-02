@@ -1,3 +1,6 @@
+#ifndef PRECISION_GLSL
+#define PRECISION_GLSL
+
 #define USE_DOUBLES_IN_BUFFER
 #define USE_DOUBLES_IN_CALCULATIONS
 
@@ -25,3 +28,7 @@
 
 #define BR(x) BUFF_REAL(x)
 #define R(x) CALC_REAL(x)
+
+const CALC_REAL PI = R(3.14159265358979323846LF);
+
+#endif

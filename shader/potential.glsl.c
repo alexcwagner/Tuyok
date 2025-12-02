@@ -28,7 +28,7 @@ CALC_REAL potential_interior_x(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL 
     CALC_REAL Ax = R(2.0LF / 3.0LF) * a * b * c * carlson_rd(b2, c2, a2);
     
     // Φ = π G ρ [I(0) - A_x(0) * x²]
-    return R(3.14159265358979323846LF) * (I0 - Ax * x * x);
+    return PI * (I0 - Ax * x * x);
 }
 
 // Interior potential at point (0, y, 0) where |y| <= b
@@ -41,7 +41,7 @@ CALC_REAL potential_interior_y(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL 
     CALC_REAL I0 = R(2.0LF) * a * b * c * carlson_rf(a2, b2, c2);
     CALC_REAL Ay = R(2.0LF / 3.0LF) * a * b * c * carlson_rd(a2, c2, b2);
     
-    return R(3.14159265358979323846LF) * (I0 - Ay * y * y);
+    return PI * (I0 - Ay * y * y);
 }
 
 // Interior potential at point (0, 0, z) where |z| <= c
@@ -54,7 +54,7 @@ CALC_REAL potential_interior_z(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL 
     CALC_REAL I0 = R(2.0LF) * a * b * c * carlson_rf(a2, b2, c2);
     CALC_REAL Az = R(2.0LF / 3.0LF) * a * b * c * carlson_rd(a2, b2, c2);
     
-    return R(3.14159265358979323846LF) * (I0 - Az * z * z);
+    return PI * (I0 - Az * z * z);
 }
 
 
@@ -93,7 +93,7 @@ CALC_REAL potential_exterior_x(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL 
     CALC_REAL Ax_lam = R(2.0LF / 3.0LF) * a * b * c * carlson_rd(b2_lam, c2_lam, a2_lam);
     
     // Φ = π G ρ [I(λ) - A_x(λ) * x²]
-    return R(3.14159265358979323846LF) * (I_lam - Ax_lam * x2);
+    return PI * (I_lam - Ax_lam * x2);
 }
 
 // Exterior potential at point (0, y, 0) where |y| > b
@@ -113,7 +113,7 @@ CALC_REAL potential_exterior_y(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL 
     CALC_REAL I_lam = R(2.0LF) * a * b * c * carlson_rf(a2_lam, b2_lam, c2_lam);
     CALC_REAL Ay_lam = R(2.0LF / 3.0LF) * a * b * c * carlson_rd(a2_lam, c2_lam, b2_lam);
     
-    return R(3.14159265358979323846LF) * (I_lam - Ay_lam * y2);
+    return PI * (I_lam - Ay_lam * y2);
 }
 
 // Exterior potential at point (0, 0, z) where |z| > c
@@ -133,7 +133,7 @@ CALC_REAL potential_exterior_z(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL 
     CALC_REAL I_lam = R(2.0LF) * a * b * c * carlson_rf(a2_lam, b2_lam, c2_lam);
     CALC_REAL Az_lam = R(2.0LF / 3.0LF) * a * b * c * carlson_rd(a2_lam, b2_lam, c2_lam);
     
-    return R(3.14159265358979323846LF) * (I_lam - Az_lam * z2);
+    return PI * (I_lam - Az_lam * z2);
 }
 
 

@@ -1,7 +1,8 @@
 #version 460 core
 
 #include "shader/precision.glsl.c"
-#include "shader/carlson.glsl.c"
+//#include "shader/carlson.glsl.c"
+#include "shader/potential.glsl.c"
 #include "shader/random.glsl.c"
 
 // ============================================================================
@@ -54,6 +55,89 @@ uniform double annealing_temperature;
 uniform uint num_variations;  // N
 uniform uint seed;
 
+
+void compute_statistics(inout Model model)
+{
+    bool valid = true;
+    
+    // compute Moment of Inertia
+    CALC_REAL moi = R(0.LF);    
+    for (uint idx = 0; idx < model.num_layers; idx++)
+    {
+        Layer layer = model.layers[idx];
+        moi += layer.density * layer.a * layer.b * layer.c * (layer.a * layer.a + layer.b * layer.b);
+    }
+    moi *= R(4.LF/15.LF) * PI;
+    
+    // compute Angular Velocity
+    CALC_REAL ang_vel = model.angular_momentum / moi;
+    
+    // Iterate through the layers to get the points we want to calculate the potential at
+    for (uint s_idx = 0; s_idx < model.num_layers; s_idx++)
+    {
+        Layer surf_layer = model.layers[s_idx];
+    
+        // accumulate the effective potential at (a,0,0), (0,b,0), and (0,0,c)
+        // start with the centrifugal contribution before iterating through layers
+        CALC_REAL pot_a = R(-0.5LF) * ang_vel * ang_vel * surf_layer.a * surf_layer.a;
+        CALC_REAL pot_b = R(-0.5LF) * ang_vel * ang_vel * surf_layer.b * surf_layer.b;
+        CALC_REAL pot_c = 0.LF;
+         
+        // Iterate through the layers to get the ellipsoid creating a potential at the points
+        for (uint m_idx = 0; m_idx < model.num_layers; m_idx++)
+        {
+            Layer mat_layer = model.layers[m_idx];
+            
+            if (s_idx <= m_idx)
+            {
+                // The surface points will be inside or on the ellipsoid
+                
+                pot_a += mat_layer.density * 
+                                potential_interior_x(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.a);
+                pot_b += mat_layer.density *
+                                potential_interior_y(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.b);
+                pot_c += mat_layer.density * 
+                                potential_interior_z(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.c);
+                
+            }
+            else
+            {
+                // The surface points will be outside the ellipsoid
+                
+                // check for bad overlap
+                valid = valid 
+                        && (surf_layer.a > mat_layer.a) 
+                        && (surf_layer.b > mat_layer.b) 
+                        && (surf_layer.c > mat_layer.c);
+                
+                pot_a += mat_layer.density * 
+                                potential_exterior_x(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.a);
+                pot_b += mat_layer.density *
+                                potential_exterior_y(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.b);
+                pot_c += mat_layer.density * 
+                                potential_exterior_z(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.c);
+                
+            }
+        }
+        
+        CALC_REAL max_pot = max(pot_a, max(pot_b, pot_c));
+        CALC_REAL min_pot = min(pot_a, min(pot_b, pot_c));
+      
+        model.rel_equipotential_err += (max_pot - min_pot) / min_pot;  
+    }
+    
+    
+    
+    
+    //model.rel_equipotential_err = ang_vel;
+    
+    model.rel_equipotential_err = valid ? model.rel_equipotential_err / model.num_layers : BR(1e30LF);
+    
+    return;
+}
+
+
+
 // ============================================================================
 // Main Compute Shader
 // ============================================================================
@@ -101,13 +185,14 @@ void main() {
         variation.layers[i].a = template_layers[i].a * mul1;
         variation.layers[i].b = template_layers[i].b * mul2;
         variation.layers[i].c = template_layers[i].c * mul3;
-        
     }
     
     // ========================================================================
     // SCORE THE VARIATION (placeholder)
     // ========================================================================
-    variation.rel_equipotential_err = BUFF_REAL(0.0);
+    compute_statistics(variation);
+    
+    
     variation.total_energy = BUFF_REAL(0.0);
     
     // Write output
