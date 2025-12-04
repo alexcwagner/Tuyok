@@ -18,9 +18,9 @@ def test_variations():
     config = ShaderConfig.precision_config("double", "double")
     program = harness.create_program("shader/explore_variations.glsl.c", config)
     
-    N = 5
     
-    angular_momentum = 4.01
+    
+    angular_momentum = 4000.01
     layers = [
         {
             'semiaxes': (0.99, 1., 1.01),
@@ -110,6 +110,8 @@ def test_variations():
     # Define buffers
     # ========================================================================
     
+    N = 1
+    
     buffers = [
         BufferSpec(
             binding=0,
@@ -126,10 +128,11 @@ def test_variations():
         )
     ]
     
+    
     uniforms = [
         UniformSpec("num_variations", N, "1ui"),
         UniformSpec("seed", 12345, "1ui"),
-        UniformSpec("annealing_temperature", 0.001, "1d")
+        UniformSpec("annealing_temperature", 0.000, "1d")
     ]    
 
     print(f"\nGenerating {N} variations...")
