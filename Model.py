@@ -10,6 +10,7 @@ import numpy as np
 import struct
 import random
 import json
+import time
 
 harness = GLSLComputeHarness()
 
@@ -31,9 +32,13 @@ class Model(dict):
         ('layers', _layer_dtype, (20,)), 
         ('rel_equipotential_err', np.float64), 
         ('total_energy', np.float64),          
-        #('_pad_struct', np.uint8, (16,))      
     ])
     
+    _best_dtype = np.dtype([
+        ('model', _model_dtype),
+        ('best_idx', np.uint32),
+        ('_pad', np.uint8, (4,))  # Alignment padding if needed
+    ])
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -94,18 +99,30 @@ class Model(dict):
 
         return input_bytes
     
-    def explore_variations(self, num_variants, temperature, seed=None):
+    def explore_variations(self, num_variants, temperature, top_k=None, seed=None):
+        """
+        Generate variations of the model and return the best ones.
+        
+        Args:
+            num_variants: Number of variations to generate
+            temperature: Annealing temperature for variation size
+            top_k: Number of best results to return (default: return all)
+            seed: Random seed (default: random)
+        
+        Returns:
+            List of Model instances, sorted by rel_equipotential_err (best first)
+        """
         if not self._shader_initialized:
             config = ShaderConfig.precision_config("double", "double")
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
             self._shader_initialized = True
-
+    
         if seed is None:
             seed = random.randint(0, 0xFFFFFFFF)
-
-        input_bytes = model.to_struct()
+    
+        input_bytes = self.to_struct()
         input_array = np.frombuffer(input_bytes, dtype=np.uint8)
-
+    
         buffers = [
             BufferSpec(
                 binding=0,
@@ -119,9 +136,15 @@ class Model(dict):
                 dtype=Model._model_dtype,
                 count=num_variants,
                 mode="out"
+            ),
+            BufferSpec(
+                binding=2,
+                dtype=Model._best_dtype,
+                count=1,
+                mode="out"
             )
         ]
-        
+        print(f"USING SEED: {seed}")
         uniforms = [
             UniformSpec("num_variations", num_variants, "1ui"),
             UniformSpec("seed", seed, "1ui"),
@@ -130,8 +153,34 @@ class Model(dict):
         
         results = self.program.run(buffers, uniforms, num_invocations=num_variants)
         
-        #return results[1]
-        return [ Model.from_struct(v) for v in results[1]]
+        # Get raw numpy structured array
+        time1 = time.time()
+        raw_results = results[1]
+        time2 = time.time()
+        print(time1, time2)
+        print(f"Generated {num_variants} variants in {(time2-time1)} seconds")
+        
+        # Sort by rel_equipotential_err (in-place, very fast on numpy arrays)
+        time3 = time.time()
+        raw_results.sort(order='rel_equipotential_err')
+        time4 = time.time()
+        print(time3, time4)
+        print(f"Sorting took {(time4-time3)} seconds")
+        
+        # Determine how many to convert
+        n_to_convert = top_k if top_k is not None else len(raw_results)
+        
+        # Only convert the top K
+        time5 = time.time()
+        top_models = [Model.from_struct(v) for v in raw_results[:n_to_convert]]
+        time6 = time.time()
+        print(time5, time6)
+        print(f"Conversion took {(time6-time5)} seconds")
+        
+        best_model = Model.from_struct(results[2][0]['model'])
+        #best_idx = results[2][0]['best_idx']
+        
+        return top_models, best_model
 
 if __name__ == '__main__':
     
@@ -145,5 +194,20 @@ if __name__ == '__main__':
         ]
     })
     
-    results = model.explore_variations(10, 0.1, 12345)
-    print(json.dumps(results, indent=4))
+    num_variants = 1000000
+    temperature = 0.1
+    top_k = 1000
+    results, best = model.explore_variations(num_variants, temperature, top_k=top_k, seed=12345)
+    print(json.dumps(best, indent=4))
+    
+    ree = best['rel_equipotential_err']
+    
+    for idx, result in enumerate(results):
+        if result['rel_equipotential_err'] == ree:
+            print(f"so-called 'best' found at position {idx}")
+            break
+    else:
+        print("so-called 'best' not found in top {top_k} results")
+        
+    #print(json.dumps(results[:top_k], indent=4))
+    

@@ -1,7 +1,6 @@
 #version 460 core
 
 #include "shader/precision.glsl.c"
-//#include "shader/carlson.glsl.c"
 #include "shader/potential.glsl.c"
 #include "shader/random.glsl.c"
 
@@ -45,6 +44,12 @@ layout(std430, binding = 0) buffer InputModel
 // Output: N variations of the model
 layout(std430, binding = 1) buffer OutputModels {
     Model variations[];
+};
+
+// Add a new buffer for the global best
+layout(std430, binding = 2) buffer BestModel {
+    Model global_best;
+    uint best_idx;
 };
 
 // ============================================================================
@@ -197,4 +202,23 @@ void main() {
     
     // Write output
     variations[idx] = variation;
+    
+   
+    if (idx == 0) 
+    {
+        // First thread initializes
+        global_best = variations[0];
+        best_idx = 0;
+    }
+    barrier();
+
+    // Simple (but racy) reduction - works okay for "good enough" best
+    if (idx < num_variations) 
+    {
+        if (variations[idx].rel_equipotential_err < global_best.rel_equipotential_err) 
+        {
+            global_best = variations[idx];
+            best_idx = idx;
+        }
+    }    
 }
