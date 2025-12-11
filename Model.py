@@ -22,7 +22,6 @@ class Model(dict):
         ('c', np.float64),
         ('r', np.float64),
         ('density', np.float64),         
-        #('_pad_struct', np.float64, (2,))
     ])
     
     _model_dtype = np.dtype([
@@ -32,12 +31,6 @@ class Model(dict):
         ('layers', _layer_dtype, (20,)), 
         ('rel_equipotential_err', np.float64), 
         ('total_energy', np.float64),          
-    ])
-    
-    _best_dtype = np.dtype([
-        ('model', _model_dtype),
-        ('best_idx', np.uint32),
-        ('_pad', np.uint8, (4,))  # Alignment padding if needed
     ])
     
     def __init__(self, *args, **kwargs):
@@ -106,12 +99,16 @@ class Model(dict):
         Args:
             num_variants: Number of variations to generate
             temperature: Annealing temperature for variation size
-            top_k: Number of best results to return (default: return all)
+            top_k: Number of best results to return (default: 1)
             seed: Random seed (default: random)
         
         Returns:
-            List of Model instances, sorted by rel_equipotential_err (best first)
+            best_model: The single best Model found
+            top_models: List of top_k Model instances (if top_k > 1)
         """
+        if top_k is None:
+            top_k = 1
+            
         if not self._shader_initialized:
             config = ShaderConfig.precision_config("double", "double")
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
@@ -122,6 +119,10 @@ class Model(dict):
     
         input_bytes = self.to_struct()
         input_array = np.frombuffer(input_bytes, dtype=np.uint8)
+        
+        # Calculate number of workgroups
+        local_size = 256
+        num_workgroups = (num_variants + local_size - 1) // local_size
     
         buffers = [
             BufferSpec(
@@ -139,11 +140,18 @@ class Model(dict):
             ),
             BufferSpec(
                 binding=2,
-                dtype=Model._best_dtype,
-                count=1,
+                dtype=Model._model_dtype,
+                count=num_workgroups,
+                mode="out"
+            ),
+            BufferSpec(
+                binding=3,
+                dtype=np.float64,
+                count=num_workgroups,
                 mode="out"
             )
         ]
+        
         print(f"USING SEED: {seed}")
         uniforms = [
             UniformSpec("num_variations", num_variants, "1ui"),
@@ -151,36 +159,34 @@ class Model(dict):
             UniformSpec("annealing_temperature", temperature, "1d")
         ]   
         
+        time_start = time.time()
         results = self.program.run(buffers, uniforms, num_invocations=num_variants)
+        time_compute = time.time()
+        print(f"GPU compute: {(time_compute - time_start):.3f} seconds")
         
-        # Get raw numpy structured array
-        time1 = time.time()
-        raw_results = results[1]
-        time2 = time.time()
-        print(time1, time2)
-        print(f"Generated {num_variants} variants in {(time2-time1)} seconds")
+        # Get workgroup bests
+        workgroup_models = results[2]
+        workgroup_scores = results[3]
         
-        # Sort by rel_equipotential_err (in-place, very fast on numpy arrays)
-        time3 = time.time()
-        raw_results.sort(order='rel_equipotential_err')
-        time4 = time.time()
-        print(time3, time4)
-        print(f"Sorting took {(time4-time3)} seconds")
+        # Find the best among workgroup bests (tiny array, fast on CPU)
+        best_workgroup_idx = np.argmin(workgroup_scores)
+        best_model = Model.from_struct(workgroup_models[best_workgroup_idx])
+        best_score = workgroup_scores[best_workgroup_idx]
         
-        # Determine how many to convert
-        n_to_convert = top_k if top_k is not None else len(raw_results)
+        time_best = time.time()
+        print(f"Find best: {(time_best - time_compute):.3f} seconds")
+        print(f"Best score: {best_score:.6e} (from workgroup {best_workgroup_idx})")
         
-        # Only convert the top K
-        time5 = time.time()
-        top_models = [Model.from_struct(v) for v in raw_results[:n_to_convert]]
-        time6 = time.time()
-        print(time5, time6)
-        print(f"Conversion took {(time6-time5)} seconds")
-        
-        best_model = Model.from_struct(results[2][0]['model'])
-        #best_idx = results[2][0]['best_idx']
-        
-        return top_models, best_model
+        # If user wants top_k > 1, sort full results
+        if top_k > 1:
+            raw_results = results[1]
+            raw_results.sort(order='rel_equipotential_err')
+            top_models = [Model.from_struct(v) for v in raw_results[:top_k]]
+            time_sort = time.time()
+            print(f"Sort and convert top {top_k}: {(time_sort - time_best):.3f} seconds")
+            return best_model, top_models
+        else:
+            return best_model, [best_model]
 
 if __name__ == '__main__':
     
@@ -190,6 +196,10 @@ if __name__ == '__main__':
             {
                 'abc': (1., 1., 1.),
                 'density': 1.,
+            },
+            {
+                'abc': (2., 2., 2.),
+                'density': 1.,
             }
         ]
     })
@@ -197,17 +207,18 @@ if __name__ == '__main__':
     num_variants = 1000000
     temperature = 0.1
     top_k = 1000
-    results, best = model.explore_variations(num_variants, temperature, top_k=top_k, seed=12345)
+    
+    best, top_models = model.explore_variations(num_variants, temperature, top_k=top_k, seed=12345)
+    
+    print("\n" + "="*60)
+    print("BEST MODEL:")
     print(json.dumps(best, indent=4))
     
+    # Verify best is actually in the top results
     ree = best['rel_equipotential_err']
-    
-    for idx, result in enumerate(results):
+    for idx, result in enumerate(top_models):
         if result['rel_equipotential_err'] == ree:
-            print(f"so-called 'best' found at position {idx}")
+            print(f"\nBest model found at position {idx} in top {top_k}")
             break
     else:
-        print("so-called 'best' not found in top {top_k} results")
-        
-    #print(json.dumps(results[:top_k], indent=4))
-    
+        print(f"\nWARNING: Best model not found in top {top_k} results!")

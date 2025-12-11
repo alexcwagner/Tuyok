@@ -46,10 +46,14 @@ layout(std430, binding = 1) buffer OutputModels {
     Model variations[];
 };
 
-// Add a new buffer for the global best
-layout(std430, binding = 2) buffer BestModel {
-    Model global_best;
-    uint best_idx;
+// Workgroup best models
+layout(std430, binding = 2) buffer WorkgroupBests {
+    Model workgroup_best_models[];
+};
+
+// Workgroup best scores
+layout(std430, binding = 3) buffer WorkgroupBestScores {
+    double workgroup_best_scores[];
 };
 
 // ============================================================================
@@ -60,6 +64,16 @@ uniform double annealing_temperature;
 uniform uint num_variations;  // N
 uniform uint seed;
 
+// ============================================================================
+// Shared memory for workgroup reduction
+// ============================================================================
+
+shared uint local_best_idx;
+shared BUFF_REAL local_best_score;
+
+// ============================================================================
+// Statistics computation
+// ============================================================================
 
 void compute_statistics(inout Model model)
 {
@@ -131,17 +145,10 @@ void compute_statistics(inout Model model)
         model.rel_equipotential_err += (max_pot - min_pot) / min_pot;  
     }
     
-    
-    
-    
-    //model.rel_equipotential_err = ang_vel;
-    
     model.rel_equipotential_err = valid ? model.rel_equipotential_err / model.num_layers : BR(1e30LF);
     
     return;
 }
-
-
 
 // ============================================================================
 // Main Compute Shader
@@ -151,74 +158,84 @@ layout(local_size_x = 256) in;
 
 void main() {
     uint idx = gl_GlobalInvocationID.x;
+    uint local_idx = gl_LocalInvocationID.x;
+    uint workgroup_id = gl_WorkGroupID.x;
     
-    // Guard against excess threads
-    if (idx >= num_variations) {
-        return;
-    }
-    
-    // Initialize RNG for this thread
-    PCGState rng;
-    initPCG(rng, seed + idx, idx);
-    
-    // Create a variation based on the template
-    Model variation;
-    variation.num_layers = template_num_layers;
-    variation.angular_momentum = template_angular_momentum;
-    
-    // Copy template layers
-    //for (uint i = 0; i < template_num_layers; i++) {
-    //    variation.layers[i] = template_layers[i];
-    //}
-    
-    // ========================================================================
-    // APPLY VARIATIONS
-    // ========================================================================
-    for (uint i = 0; i < template_num_layers; i++)
-    {
-        variation.layers[i].volumetric_radius = template_layers[i].volumetric_radius;
-        variation.layers[i].density = template_layers[i].density;
-        
-        float rand1 = pcg_float(rng);
-        float rand2 = pcg_float(rng);
-        float rand3 = pcg_float(rng);
-        
-        BUFF_REAL mul1 = BR(exp2( (rand1 - 0.5) * float(annealing_temperature) ));
-        BUFF_REAL mul2 = BR(exp2( (rand2 - 0.5) * float(annealing_temperature) ));
-        BUFF_REAL mul3 = BR(1.LF) / (mul1 * mul2);  // Preserve volume
-        
-        variation.layers[i].a = template_layers[i].a * mul1;
-        variation.layers[i].b = template_layers[i].b * mul2;
-        variation.layers[i].c = template_layers[i].c * mul3;
-    }
-    
-    // ========================================================================
-    // SCORE THE VARIATION (placeholder)
-    // ========================================================================
-    compute_statistics(variation);
-    
-    
-    variation.total_energy = BUFF_REAL(0.0);
-    
-    // Write output
-    variations[idx] = variation;
-    
-   
-    if (idx == 0) 
-    {
-        // First thread initializes
-        global_best = variations[0];
-        best_idx = 0;
+    // Initialize shared memory once per workgroup
+    if (local_idx == 0) {
+        local_best_idx = 0;
+        local_best_score = BR(1e30LF);
     }
     barrier();
-
-    // Simple (but racy) reduction - works okay for "good enough" best
-    if (idx < num_variations) 
-    {
-        if (variations[idx].rel_equipotential_err < global_best.rel_equipotential_err) 
+    
+    // Guard against excess threads
+    if (idx < num_variations) {
+        
+        // Initialize RNG for this thread
+        PCGState rng;
+        initPCG(rng, seed + idx, idx);
+        
+        // Create a variation based on the template
+        Model variation;
+        variation.num_layers = template_num_layers;
+        variation.angular_momentum = template_angular_momentum;
+        
+        // ====================================================================
+        // APPLY VARIATIONS
+        // ====================================================================
+        for (uint i = 0; i < template_num_layers; i++)
         {
-            global_best = variations[idx];
-            best_idx = idx;
+            variation.layers[i].volumetric_radius = template_layers[i].volumetric_radius;
+            variation.layers[i].density = template_layers[i].density;
+            
+            float rand1 = pcg_float(rng);
+            float rand2 = pcg_float(rng);
+            float rand3 = pcg_float(rng);
+            
+            BUFF_REAL mul1 = BR(exp2( (rand1 - 0.5) * float(annealing_temperature) ));
+            BUFF_REAL mul2 = BR(exp2( (rand2 - 0.5) * float(annealing_temperature) ));
+            BUFF_REAL mul3 = BR(1.LF) / (mul1 * mul2);  // Preserve volume
+            
+            variation.layers[i].a = template_layers[i].a * mul1;
+            variation.layers[i].b = template_layers[i].b * mul2;
+            variation.layers[i].c = template_layers[i].c * mul3;
         }
-    }    
+        
+        // ====================================================================
+        // SCORE THE VARIATION
+        // ====================================================================
+        compute_statistics(variation);
+        
+        variation.total_energy = BUFF_REAL(0.0);
+        
+        // Write output
+        variations[idx] = variation;
+    }
+    
+    // ========================================================================
+    // WORKGROUP REDUCTION (find best within workgroup)
+    // ========================================================================
+    
+    barrier();
+    
+    // Each thread competes sequentially (slow but correct)
+    if (idx < num_variations) {
+        BUFF_REAL my_score = variations[idx].rel_equipotential_err;
+        
+        for (uint i = 0; i < 256; i++) {
+            if (local_idx == i) {
+                if (my_score < local_best_score) {
+                    local_best_score = my_score;
+                    local_best_idx = idx;
+                }
+            }
+            barrier();
+        }
+    }
+    
+    // First thread in workgroup writes the workgroup's best
+    if (local_idx == 0) {
+        workgroup_best_models[workgroup_id] = variations[local_best_idx];
+        workgroup_best_scores[workgroup_id] = local_best_score;
+    }
 }

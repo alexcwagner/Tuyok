@@ -46,12 +46,10 @@ class BufferSpec:
         if isinstance(self.dtype, type) and self.dtype == np.uint8:
             # For raw bytes, count IS the byte size
             return self.count
-        elif hasattr(self.dtype, 'itemsize'):
-            return self.count * self.dtype.itemsize
-        else:
-            # Fallback: create dtype and get itemsize
-            dt = np.dtype(self.dtype)
-            return self.count * dt.itemsize
+        
+        # Always convert to np.dtype to get itemsize
+        dt = np.dtype(self.dtype) if not isinstance(self.dtype, np.dtype) else self.dtype
+        return self.count * dt.itemsize
     
     @property
     def usage(self):
