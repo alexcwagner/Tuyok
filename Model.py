@@ -25,12 +25,12 @@ class Model(dict):
     ])
     
     _model_dtype = np.dtype([
-        ('angular_momentum', np.float64),
-        ('num_layers', np.uint32),       
-        ('_pad_to_32', np.uint8, (4,)),  
-        ('layers', _layer_dtype, (20,)), 
-        ('rel_equipotential_err', np.float64), 
-        ('total_energy', np.float64),          
+        ('angular_momentum', np.float64),  # offset 0
+        ('num_layers', np.uint32),         # offset 8
+        ('_pad_to_16', np.uint32),         # offset 12 (4 bytes padding for std430 alignment)
+        ('layers', _layer_dtype, (20,)),   # offset 16
+        ('rel_equipotential_err', np.float64),  # offset 816
+        ('total_energy', np.float64),      # offset 824
     ])
     
     def __init__(self, *args, **kwargs):
@@ -72,23 +72,35 @@ class Model(dict):
     
     def to_struct(self):
         
-        # Header: 32 bytes total
+        # Header: 16 bytes total (std430 layout)
         input_bytes = struct.pack('dI',  # double + uint = 12 bytes
                                   self["angular_momentum"],
                                   len(self["layers"])
                                   )
-        input_bytes += b'\x00' * 20  # 20 bytes padding to reach offset 32      
+        input_bytes += b'\x00' * 4  # 4 bytes padding to reach offset 16 (std430 alignment)
         
-        for layer in self['layers']:
-            # Layer: 64 bytes each
-            input_bytes += struct.pack(
-                                'ddddd',
-                                layer['abc'][0],
-                                layer['abc'][1],
-                                layer['abc'][2],
-                                layer['r'], 
-                                layer['density']
-                            )
+        # Layers: 40 bytes each × 20 = 800 bytes (offsets 16-815)
+        for i in range(20):
+            if i < len(self['layers']):
+                layer = self['layers'][i]
+                input_bytes += struct.pack(
+                                    'ddddd',  # 5 doubles = 40 bytes
+                                    layer['abc'][0],
+                                    layer['abc'][1],
+                                    layer['abc'][2],
+                                    layer['r'], 
+                                    layer['density']
+                                )
+            else:
+                # Pad unused layer slots with zeros
+                input_bytes += b'\x00' * 40
+        
+        # Output fields: 16 bytes total (offsets 816-831)
+        rel_equipotential_err = self.get('rel_equipotential_err', 0.0)
+        total_energy = self.get('total_energy', 0.0)
+        input_bytes += struct.pack('dd',  # 2 doubles = 16 bytes
+                                   rel_equipotential_err,
+                                   total_energy)
 
         return input_bytes
     

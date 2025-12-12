@@ -17,14 +17,14 @@ struct Layer {
 };
 
 struct Model {
-    BUFF_REAL angular_momentum;  // offset 0
-    uint num_layers;             // offset 8
-    // implicit 20 bytes padding here
-    Layer layers[20];            // offset 32
+    BUFF_REAL angular_momentum;  // offset 0, 8 bytes
+    uint num_layers;             // offset 8, 4 bytes
+    // implicit 4 bytes padding to align array to 16-byte boundary
+    Layer layers[20];            // offset 16, 800 bytes (20 × 40)
     
-    BUFF_REAL rel_equipotential_err;  // offset 1312
-    BUFF_REAL total_energy;           // offset 1320
-    // implicit 16 bytes padding here
+    BUFF_REAL rel_equipotential_err;  // offset 816, 8 bytes
+    BUFF_REAL total_energy;           // offset 824, 8 bytes
+    // Total size: 832 bytes
 };
 
 // ============================================================================
@@ -36,9 +36,8 @@ layout(std430, binding = 0) buffer InputModel
 {
     double template_angular_momentum;  // offset 0, 8 bytes
     uint template_num_layers;          // offset 8, 4 bytes
-    uint _pad0;                        // offset 12, 4 bytes (explicit)
-    double _pad1[2];                   // offset 16, 16 bytes (to align to 32)
-    Layer template_layers[];           // offset 32, flexible array
+    uint _pad0;                        // offset 12, 4 bytes (explicit padding to 16)
+    Layer template_layers[];           // offset 16, flexible array
 };
 
 // Output: N variations of the model
