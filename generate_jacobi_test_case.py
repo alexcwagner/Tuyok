@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.special import elliprj, elliprf, elliprd
 from scipy.optimize import brentq
-import matplotlib.pyplot as plt
 import json
 
 def jacobi_residual(a, b):
@@ -35,8 +34,17 @@ def generate_test_case(a):
     
     c = 1./a/b
     
+    ang_vel = np.sqrt((4/3) * np.pi * a * b * c / (a*a-b*b) 
+                * (a*a*elliprd(b*b, c*c, a*a) - b*b*elliprd(c*c, a*a, b*b)))
+    
+    moi = (4/15)*np.pi*a*b*c
+    
+    ang_mom = ang_vel / moi
+    
+    
+    
     config = {
-        'angular_momentum': 0.,
+        'angular_momentum': ang_mom,
         'layers': [
             {
                 'abc': (a, b, c),

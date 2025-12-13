@@ -104,6 +104,82 @@ class Model(dict):
 
         return input_bytes
     
+    def dump_struct_hex(self, data_bytes=None):
+        """
+        Dump the struct as hex for debugging.
+        If data_bytes is None, uses self.to_struct()
+        """
+        if data_bytes is None:
+            data_bytes = self.to_struct()
+        
+        print(f"\nStruct dump ({len(data_bytes)} bytes):")
+        print("=" * 70)
+        
+        # Header
+        print("Header (16 bytes):")
+        print(f"  0-7   angular_momentum: {data_bytes[0:8].hex()}")
+        ang_mom = struct.unpack('d', data_bytes[0:8])[0]
+        print(f"        = {ang_mom}")
+        print(f"  8-11  num_layers: {data_bytes[8:12].hex()}")
+        num_layers = struct.unpack('I', data_bytes[8:12])[0]
+        print(f"        = {num_layers}")
+        print(f"  12-15 padding: {data_bytes[12:16].hex()}")
+        
+        # Layers (show first 2 and last 1)
+        print("\nLayers (800 bytes, showing first 2):")
+        for i in range(min(2, num_layers)):
+            offset = 16 + i * 40
+            layer_bytes = data_bytes[offset:offset+40]
+            a, b, c, r, density = struct.unpack('ddddd', layer_bytes)
+            print(f"  Layer {i} (offset {offset}):")
+            print(f"    a={a}, b={b}, c={c}, r={r}, density={density}")
+        
+        # Output fields
+        print("\nOutput fields (16 bytes):")
+        print(f"  816-823 rel_equipotential_err: {data_bytes[816:824].hex()}")
+        ree = struct.unpack('d', data_bytes[816:824])[0]
+        print(f"          = {ree}")
+        print(f"  824-831 total_energy: {data_bytes[824:832].hex()}")
+        te = struct.unpack('d', data_bytes[824:832])[0]
+        print(f"          = {te}")
+        print("=" * 70)
+    
+    def dump_numpy_struct(self, numpy_array):
+        """
+        Dump a numpy structured array (as returned from GPU) for debugging.
+        """
+        print(f"\nNumPy struct dump:")
+        print("=" * 70)
+        print(f"  angular_momentum: {numpy_array['angular_momentum']}")
+        print(f"  num_layers: {numpy_array['num_layers']}")
+        print(f"  layers[0]: a={numpy_array['layers'][0][0]['a']}, "
+              f"b={numpy_array['layers'][0][0]['b']}, "
+              f"c={numpy_array['layers'][0][0]['c']}")
+        if numpy_array['num_layers'] > 1:
+            print(f"  layers[1]: a={numpy_array['layers'][0][1]['a']}, "
+                  f"b={numpy_array['layers'][0][1]['b']}, "
+                  f"c={numpy_array['layers'][0][1]['c']}")
+        print(f"  rel_equipotential_err: {numpy_array['rel_equipotential_err']}")
+        print(f"  total_energy: {numpy_array['total_energy']}")
+        print("=" * 70)
+        
+    def dump_raw_bytes(self, raw_bytes, label="Raw bytes"):
+        """
+        Dump raw bytes in hex with offsets.
+        """
+        print(f"\n{label} ({len(raw_bytes)} bytes):")
+        print("=" * 70)
+        for i in range(0, min(len(raw_bytes), 832), 16):
+            hex_str = ' '.join(f'{b:02x}' for b in raw_bytes[i:i+16])
+            print(f"  {i:4d}: {hex_str}")
+            if i == 0:
+                print("        ^ header")
+            elif i == 16:
+                print("        ^ layers start")
+            elif i == 816:
+                print("        ^ output fields")
+        print("=" * 70)
+    
     def explore_variations(self, num_variants, temperature, top_k=None, seed=None):
         """
         Generate variations of the model and return the best ones.
@@ -202,23 +278,38 @@ class Model(dict):
 
 if __name__ == '__main__':
     
+    # model = Model({
+    #     'angular_momentum': 0.,
+    #     'layers': [
+    #         {
+    #             'abc': (1., 1., 1.),
+    #             'density': 1.,
+    #         },
+    #         {
+    #             'abc': (2., 2., 2.),
+    #             'density': 1.,
+    #         }
+    #     ]
+    # })
+    
     model = Model({
-        'angular_momentum': 0.,
-        'layers': [
+        "angular_momentum": 1.2874789457385492,
+        "layers": [
             {
-                'abc': (1., 1., 1.),
-                'density': 1.,
-            },
-            {
-                'abc': (2., 2., 2.),
-                'density': 1.,
+                "abc": [
+                    1.3,
+                    1.105575570700132,
+                    0.6957740290368712
+                ],
+                "density": 1.0
             }
         ]
     })
     
-    num_variants = 1000000
-    temperature = 0.1
-    top_k = 1000
+    
+    num_variants = 1
+    temperature = 0.00
+    top_k = 1
     
     best, top_models = model.explore_variations(num_variants, temperature, top_k=top_k, seed=12345)
     

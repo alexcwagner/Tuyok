@@ -78,6 +78,9 @@ void compute_statistics(inout Model model)
 {
     bool valid = true;
     
+    // Initialize error accumulator to zero
+    model.rel_equipotential_err = BR(0.0LF);
+    
     // compute Moment of Inertia
     CALC_REAL moi = R(0.LF);    
     for (uint idx = 0; idx < model.num_layers; idx++)
