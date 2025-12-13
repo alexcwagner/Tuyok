@@ -4,6 +4,11 @@
 #define USE_DOUBLES_IN_BUFFER
 #define USE_DOUBLES_IN_CALCULATIONS
 
+// Diagnostic: This will cause a compile error if USE_DOUBLES_IN_BUFFER is somehow not defined
+#ifndef USE_DOUBLES_IN_BUFFER
+#error "USE_DOUBLES_IN_BUFFER is not defined!"
+#endif
+
 #ifdef USE_DOUBLES_IN_BUFFER
     #define BUFF_REAL double
     #define BUFF_VEC4 dvec4

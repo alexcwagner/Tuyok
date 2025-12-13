@@ -12,7 +12,7 @@ struct Layer {
     BUFF_REAL a;
     BUFF_REAL b;
     BUFF_REAL c;
-    BUFF_REAL r;
+    BUFF_REAL volumetric_radius;
     BUFF_REAL density;
 };
 
@@ -182,18 +182,20 @@ void main() {
         variation.num_layers = template_num_layers;
         variation.angular_momentum = template_angular_momentum;
         
+        // DIAGNOSTIC: Store what we read from template_layers
+        if (idx == 0) {
+            variation.total_energy = double(template_layers[0].a);
+        }
+        
         // ====================================================================
         // APPLY VARIATIONS
         // ====================================================================
         for (uint i = 0; i < template_num_layers; i++)
         {
-            variation.layers[i].r = template_layers[i].r;
+            variation.layers[i].volumetric_radius = template_layers[i].volumetric_radius;
             variation.layers[i].density = template_layers[i].density;
             
-            
-            
-            if (annealing_temperature == 0.0) 
-            {
+            if (annealing_temperature == 0.0) {
                 variation.layers[i].a = template_layers[i].a;
                 variation.layers[i].b = template_layers[i].b;
                 variation.layers[i].c = template_layers[i].c;
@@ -201,12 +203,11 @@ void main() {
             else 
             {
                 BUFF_REAL mul1, mul2, mul3;
-                
+
                 float rand1 = pcg_float(rng);
                 float rand2 = pcg_float(rng);
                 float rand3 = pcg_float(rng);
                 
-                // Use full precision for multipliers to avoid truncating layer dimensions
                 mul1 = BR(exp2( (rand1 - 0.5) * float(annealing_temperature) ));
                 mul2 = BR(exp2( (rand2 - 0.5) * float(annealing_temperature) ));
                 mul3 = BR(1.LF) / (mul1 * mul2);  // Preserve volume
@@ -214,10 +215,7 @@ void main() {
                 variation.layers[i].a = template_layers[i].a * mul1;
                 variation.layers[i].b = template_layers[i].b * mul2;
                 variation.layers[i].c = template_layers[i].c * mul3;
-                
             }
-            
-            
         }
         
         // ====================================================================

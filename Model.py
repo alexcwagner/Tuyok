@@ -201,27 +201,6 @@ class Model(dict):
             config = ShaderConfig.precision_config("double", "double")
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
             self._shader_initialized = True
-            
-            # DIAGNOSTIC: Check what the shader actually compiled with
-            print("\n=== SHADER COMPILATION DIAGNOSTIC ===")
-            source_lines = self.program.source_code.split('\n')
-            
-            # Find and print BUFF_REAL definition
-            for i, line in enumerate(source_lines):
-                if 'BUFF_REAL' in line and '#define' in line:
-                    print(f"Line {i}: {line}")
-                    
-            # Find and print struct Layer definition
-            in_layer_struct = False
-            for i, line in enumerate(source_lines):
-                if 'struct Layer' in line:
-                    in_layer_struct = True
-                if in_layer_struct:
-                    print(f"Line {i}: {line}")
-                    if '};' in line:
-                        break
-                        
-            print("=====================================\n")
     
         if seed is None:
             seed = random.randint(0, 0xFFFFFFFF)
@@ -278,18 +257,21 @@ class Model(dict):
             raw_result = results[1][0]
             print(f"\n=== DIAGNOSTIC: First result raw data ===")
             print(f"  Temperature: {temperature}")
-            print(f"  Stored mul1 value: {raw_result['total_energy']}")
+            print(f"  GPU read template_layers[0].a as: {raw_result['total_energy']}")
             print(f"  Input 'a' value: {self['layers'][0]['abc'][0]}")
             print(f"  Output 'a' value: {raw_result['layers'][0]['a']}")
-            print(f"  Ratio (should be mul1): {raw_result['layers'][0]['a'] / self['layers'][0]['abc'][0]}")
-            print(f"  Difference: {raw_result['layers'][0]['a'] - self['layers'][0]['abc'][0]}")
+            print(f"  Match? {abs(raw_result['layers'][0]['a'] - self['layers'][0]['abc'][0]) < 1e-10}")
+            
+            if abs(raw_result['total_energy'] - self['layers'][0]['abc'][0]) > 1e-10:
+                print(f"  ⚠️  GPU READ from template_layers has precision loss!")
+                print(f"     Expected: {self['layers'][0]['abc'][0]}")
+                print(f"     GPU read: {raw_result['total_energy']}")
             
             # Check the raw bytes
             raw_bytes = raw_result.tobytes()
             layer0_offset = 16  # offset to first layer
             a_bytes = raw_bytes[layer0_offset:layer0_offset+8]
-            print(f"  Raw bytes for 'a': {a_bytes.hex()}")
-            print(f"  Unpacked as double: {struct.unpack('d', a_bytes)[0]}")
+            print(f"  Raw bytes for output 'a': {a_bytes.hex()}")
             print(f"==========================================\n")
         
         # Get workgroup bests
