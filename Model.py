@@ -201,6 +201,27 @@ class Model(dict):
             config = ShaderConfig.precision_config("double", "double")
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
             self._shader_initialized = True
+            
+            # DIAGNOSTIC: Check what the shader actually compiled with
+            print("\n=== SHADER COMPILATION DIAGNOSTIC ===")
+            source_lines = self.program.source_code.split('\n')
+            
+            # Find and print BUFF_REAL definition
+            for i, line in enumerate(source_lines):
+                if 'BUFF_REAL' in line and '#define' in line:
+                    print(f"Line {i}: {line}")
+                    
+            # Find and print struct Layer definition
+            in_layer_struct = False
+            for i, line in enumerate(source_lines):
+                if 'struct Layer' in line:
+                    in_layer_struct = True
+                if in_layer_struct:
+                    print(f"Line {i}: {line}")
+                    if '};' in line:
+                        break
+                        
+            print("=====================================\n")
     
         if seed is None:
             seed = random.randint(0, 0xFFFFFFFF)
@@ -252,6 +273,25 @@ class Model(dict):
         time_compute = time.time()
         print(f"GPU compute: {(time_compute - time_start):.3f} seconds")
         
+        # DIAGNOSTIC: Check raw bytes of first result
+        if num_variants > 0:
+            raw_result = results[1][0]
+            print(f"\n=== DIAGNOSTIC: First result raw data ===")
+            print(f"  Temperature: {temperature}")
+            print(f"  Stored mul1 value: {raw_result['total_energy']}")
+            print(f"  Input 'a' value: {self['layers'][0]['abc'][0]}")
+            print(f"  Output 'a' value: {raw_result['layers'][0]['a']}")
+            print(f"  Ratio (should be mul1): {raw_result['layers'][0]['a'] / self['layers'][0]['abc'][0]}")
+            print(f"  Difference: {raw_result['layers'][0]['a'] - self['layers'][0]['abc'][0]}")
+            
+            # Check the raw bytes
+            raw_bytes = raw_result.tobytes()
+            layer0_offset = 16  # offset to first layer
+            a_bytes = raw_bytes[layer0_offset:layer0_offset+8]
+            print(f"  Raw bytes for 'a': {a_bytes.hex()}")
+            print(f"  Unpacked as double: {struct.unpack('d', a_bytes)[0]}")
+            print(f"==========================================\n")
+        
         # Get workgroup bests
         workgroup_models = results[2]
         workgroup_scores = results[3]
@@ -278,20 +318,6 @@ class Model(dict):
 
 if __name__ == '__main__':
     
-    # model = Model({
-    #     'angular_momentum': 0.,
-    #     'layers': [
-    #         {
-    #             'abc': (1., 1., 1.),
-    #             'density': 1.,
-    #         },
-    #         {
-    #             'abc': (2., 2., 2.),
-    #             'density': 1.,
-    #         }
-    #     ]
-    # })
-    
     model = Model({
         "angular_momentum": 1.2874789457385492,
         "layers": [
@@ -306,9 +332,8 @@ if __name__ == '__main__':
         ]
     })
     
-    
     num_variants = 1
-    temperature = 0.00
+    temperature = 0.0
     top_k = 1
     
     best, top_models = model.explore_variations(num_variants, temperature, top_k=top_k, seed=12345)

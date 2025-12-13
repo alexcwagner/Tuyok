@@ -88,8 +88,20 @@ class GLSLComputeProgram:
     @staticmethod
     def _load_shader(path: str) -> str:
         """Load shader with #include support."""
+        included_files = set()
+        
         def load_lines(filepath):
+            # Normalize path
+            import os
+            filepath = os.path.normpath(filepath)
+            
+            # Skip if already included
+            if filepath in included_files:
+                return []
+            
+            included_files.add(filepath)
             lines_out = []
+            
             with open(filepath, 'r', encoding='utf-8') as fp:
                 for line in fp:
                     stripped = line.strip()
