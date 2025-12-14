@@ -202,6 +202,10 @@ class Model(dict):
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
             self._shader_initialized = True
     
+        #self.program._dump_source()
+    
+    
+    
         if seed is None:
             seed = random.randint(0, 0xFFFFFFFF)
     
@@ -309,7 +313,8 @@ if __name__ == '__main__':
                     1.105575570700132,
                     0.6957740290368712
                 ],
-                "density": 1.0
+                "r": 1.0,
+                "density": 1.1
             }
         ]
     })
@@ -327,8 +332,10 @@ if __name__ == '__main__':
     # Verify best is actually in the top results
     ree = best['rel_equipotential_err']
     for idx, result in enumerate(top_models):
+        
         if result['rel_equipotential_err'] == ree:
             print(f"\nBest model found at position {idx} in top {top_k}")
+            print(json.dumps(result, indent=4))
             break
     else:
         print(f"\nWARNING: Best model not found in top {top_k} results!")

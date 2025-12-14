@@ -132,7 +132,9 @@ class GLSLComputeProgram:
         # Build define block
         define_block = []
         for key, value in self.config.defines.items():
-            define_block.append(f"#define {key} {value}")
+            define = f"#define {key} {value}"
+            print(f"\033[1;31m{define}\033[m")
+            define_block.append(define)
         
         # Insert defines after version
         lines[version_line_idx:version_line_idx] = define_block
