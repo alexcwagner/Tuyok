@@ -202,7 +202,7 @@ class Model(dict):
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
             self._shader_initialized = True
     
-        #self.program._dump_source()
+            self.program._dump_source()
     
     
     
@@ -211,6 +211,24 @@ class Model(dict):
     
         input_bytes = self.to_struct()
         input_array = np.frombuffer(input_bytes, dtype=np.uint8)
+        
+        # ============ ADD THIS DIAGNOSTIC HERE ============
+        print(f"\n=== INPUT BUFFER DIAGNOSTIC ===")
+        print(f"First layer 'a' value in Python: {self['layers'][0]['abc'][0]}")
+        print(f"Bytes at offset 16-23 (first layer 'a'): {input_bytes[16:24].hex()}")
+        a_from_bytes = struct.unpack('d', input_bytes[16:24])[0]
+        print(f"Reading those bytes as double: {a_from_bytes}")
+        print(f"Match? {a_from_bytes == self['layers'][0]['abc'][0]}")
+        
+        # Also check what float32 truncation looks like
+        truncated = np.float32(self['layers'][0]['abc'][0])
+        print(f"If this were truncated to float32: {truncated}")
+        print(f"================================\n")
+        # ==================================================
+        
+        
+        
+        
         
         # Calculate number of workgroups
         local_size = 256
@@ -255,6 +273,20 @@ class Model(dict):
         results = self.program.run(buffers, uniforms, num_invocations=num_variants)
         time_compute = time.time()
         print(f"GPU compute: {(time_compute - time_start):.3f} seconds")
+        
+        results = self.program.run(buffers, uniforms, num_invocations=num_variants)
+
+        # DIAGNOSTIC: Check the raw bytes of the first result
+        print(f"\n=== RAW OUTPUT BUFFER BYTES ===")
+        raw_output = results[1]
+        print(f"Output buffer dtype: {raw_output.dtype}")
+        print(f"Output buffer itemsize: {raw_output.dtype.itemsize}")
+        print(f"First result raw bytes (first 64 bytes): {raw_output[0].tobytes()[:64].hex()}")
+        print("=" * 60)
+        
+        
+        
+        
         
         # DIAGNOSTIC: Check raw bytes of first result
         if num_variants > 0:

@@ -20,16 +20,16 @@ from OpenGL.GL import shaders as gl_shaders
 class ShaderConfig:
     """Configuration for shader compilation."""
     defines: Dict[str, str] = field(default_factory=dict)
-    
+
     @staticmethod
     def precision_config(buffer_precision: str = "double", 
                         calc_precision: str = "double") -> 'ShaderConfig':
         """Create a precision configuration."""
+        # Don't quote the values - they need to be bare identifiers for the #if comparisons
         return ShaderConfig(defines={
-            "BUFFER_PRECISION": buffer_precision,
+            "BUFFER_PRECISION": buffer_precision,  # Will inject as: #define BUFFER_PRECISION double
             "CALC_PRECISION": calc_precision
         })
-
 
 @dataclass
 class BufferSpec:
@@ -133,7 +133,6 @@ class GLSLComputeProgram:
         define_block = []
         for key, value in self.config.defines.items():
             define = f"#define {key} {value}"
-            print(f"\033[1;31m{define}\033[m")
             define_block.append(define)
         
         # Insert defines after version
@@ -431,6 +430,7 @@ def demo_carlson_rj():
     # Test with double/double precision
     config = ShaderConfig.precision_config("double", "double")
     program = harness.create_program("shader/test_carlson_rj.glsl.c", config)
+    
     
     N = 1_000_000
     

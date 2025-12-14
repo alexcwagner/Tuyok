@@ -1,4 +1,5 @@
 #version 460 core
+#extension GL_ARB_gpu_shader_fp64 : require  // <-- ADD THIS
 
 #include "shader/precision.glsl.c"
 #include "shader/potential.glsl.c"
@@ -27,6 +28,26 @@ struct Model {
     // Total size: 832 bytes
 };
 
+// struct Layer {
+//     double a;
+//     double b;
+//     double c;
+//     double r;
+//     double density;
+// };
+// 
+// struct Model {
+//     double angular_momentum;  // offset 0, 8 bytes
+//     uint num_layers;             // offset 8, 4 bytes
+//     // implicit 4 bytes padding to align array to 16-byte boundary
+//     Layer layers[20];            // offset 16, 800 bytes (20 × 40)
+//     
+//     double rel_equipotential_err;  // offset 816, 8 bytes
+//     double total_energy;           // offset 824, 8 bytes
+//     // Total size: 832 bytes
+// };
+
+
 // ============================================================================
 // Buffers
 // ============================================================================
@@ -37,7 +58,8 @@ layout(std430, binding = 0) buffer InputModel
     double template_angular_momentum;  // offset 0, 8 bytes
     uint template_num_layers;          // offset 8, 4 bytes
     uint _pad0;                        // offset 12, 4 bytes (explicit padding to 16)
-    Layer template_layers[];           // offset 16, flexible array
+    //Layer template_layers[];           // offset 16, flexible array
+    Layer template_layers[20];           // offset 16, fixed array
 };
 
 // Output: N variations of the model
@@ -85,8 +107,13 @@ void compute_statistics(inout Model model)
     CALC_REAL moi = R(0.LF);    
     for (uint idx = 0; idx < model.num_layers; idx++)
     {
-        Layer layer = model.layers[idx];
-        moi += layer.density * layer.a * layer.b * layer.c * (layer.a * layer.a + layer.b * layer.b);
+        //Layer layer = model.layers[idx];
+        moi += model.layers[idx].density 
+                * model.layers[idx].a 
+                * model.layers[idx].b 
+                * model.layers[idx].c 
+                * (model.layers[idx].a * model.layers[idx].a 
+                    + model.layers[idx].b * model.layers[idx].b);
     }
     moi *= R(4.LF/15.LF) * PI;
     
@@ -96,29 +123,45 @@ void compute_statistics(inout Model model)
     // Iterate through the layers to get the points we want to calculate the potential at
     for (uint s_idx = 0; s_idx < model.num_layers; s_idx++)
     {
-        Layer surf_layer = model.layers[s_idx];
+        //Layer surf_layer = model.layers[s_idx];
     
         // accumulate the effective potential at (a,0,0), (0,b,0), and (0,0,c)
         // start with the centrifugal contribution before iterating through layers
-        CALC_REAL pot_a = R(-0.5LF) * ang_vel * ang_vel * surf_layer.a * surf_layer.a;
-        CALC_REAL pot_b = R(-0.5LF) * ang_vel * ang_vel * surf_layer.b * surf_layer.b;
+        CALC_REAL pot_a = R(-0.5LF) 
+                        * ang_vel * ang_vel 
+                        * model.layers[s_idx].a * model.layers[s_idx].a;
+        CALC_REAL pot_b = R(-0.5LF) 
+                        * ang_vel * ang_vel 
+                        * model.layers[s_idx].b * model.layers[s_idx].b;
         CALC_REAL pot_c = 0.LF;
          
         // Iterate through the layers to get the ellipsoid creating a potential at the points
         for (uint m_idx = 0; m_idx < model.num_layers; m_idx++)
         {
-            Layer mat_layer = model.layers[m_idx];
+            //Layer mat_layer = model.layers[m_idx];
             
             if (s_idx <= m_idx)
             {
                 // The surface points will be inside or on the ellipsoid
                 
-                pot_a += mat_layer.density * 
-                                potential_interior_x(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.a);
-                pot_b += mat_layer.density *
-                                potential_interior_y(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.b);
-                pot_c += mat_layer.density * 
-                                potential_interior_z(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.c);
+                pot_a += model.layers[m_idx].density * 
+                                potential_interior_x(
+                                        model.layers[m_idx].a, 
+                                        model.layers[m_idx].b, 
+                                        model.layers[m_idx].c, 
+                                        model.layers[s_idx].a);
+                pot_b += model.layers[m_idx].density *
+                                potential_interior_y(
+                                        model.layers[m_idx].a, 
+                                        model.layers[m_idx].b, 
+                                        model.layers[m_idx].c, 
+                                        model.layers[s_idx].b);
+                pot_c += model.layers[m_idx].density * 
+                                potential_interior_z(
+                                        model.layers[m_idx].a, 
+                                        model.layers[m_idx].b, 
+                                        model.layers[m_idx].c, 
+                                        model.layers[s_idx].c);
                 
             }
             else
@@ -127,17 +170,28 @@ void compute_statistics(inout Model model)
                 
                 // check for bad overlap
                 valid = valid 
-                        && (surf_layer.a > mat_layer.a) 
-                        && (surf_layer.b > mat_layer.b) 
-                        && (surf_layer.c > mat_layer.c);
+                        && (model.layers[s_idx].a > model.layers[m_idx].a) 
+                        && (model.layers[s_idx].b > model.layers[m_idx].b) 
+                        && (model.layers[s_idx].c > model.layers[m_idx].c);
                 
-                pot_a += mat_layer.density * 
-                                potential_exterior_x(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.a);
-                pot_b += mat_layer.density *
-                                potential_exterior_y(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.b);
-                pot_c += mat_layer.density * 
-                                potential_exterior_z(mat_layer.a, mat_layer.b, mat_layer.c, surf_layer.c);
-                
+                pot_a += model.layers[m_idx].density * 
+                                potential_exterior_x(
+                                        model.layers[m_idx].a, 
+                                        model.layers[m_idx].b, 
+                                        model.layers[m_idx].c, 
+                                        model.layers[s_idx].a);
+                pot_b += model.layers[m_idx].density *
+                                potential_exterior_y(
+                                        model.layers[m_idx].a, 
+                                        model.layers[m_idx].b, 
+                                        model.layers[m_idx].c, 
+                                        model.layers[s_idx].b);
+                pot_c += model.layers[m_idx].density * 
+                                potential_exterior_z(
+                                        model.layers[m_idx].a, 
+                                        model.layers[m_idx].b, 
+                                        model.layers[m_idx].c, 
+                                        model.layers[s_idx].c);
             }
         }
         
@@ -178,9 +232,9 @@ void main() {
         initPCG(rng, seed + idx, idx);
         
         // Create a variation based on the template
-        Model variation;
-        variation.num_layers = template_num_layers;
-        variation.angular_momentum = template_angular_momentum;
+        //Model variation;
+        variations[idx].num_layers = template_num_layers;
+        variations[idx].angular_momentum = template_angular_momentum;
         
         // DIAGNOSTIC: Read BEFORE any assignment - store in a temporary field
         BUFF_REAL debug_read_a = template_layers[0].a;
@@ -190,14 +244,14 @@ void main() {
         // ====================================================================
         for (uint i = 0; i < template_num_layers; i++)
         {
-            variation.layers[i].r = template_layers[i].r;
-            variation.layers[i].density = template_layers[i].density;
+            variations[idx].layers[i].r = template_layers[i].r;
+            variations[idx].layers[i].density = template_layers[i].density;
             
             if (annealing_temperature == 0.0) 
             {                
-                variation.layers[i].a = template_layers[i].a;
-                variation.layers[i].b = template_layers[i].b;
-                variation.layers[i].c = template_layers[i].c;
+                variations[idx].layers[i].a = template_layers[i].a;
+                variations[idx].layers[i].b = template_layers[i].b;
+                variations[idx].layers[i].c = template_layers[i].c;
             } 
             else 
             {
@@ -212,26 +266,28 @@ void main() {
                 mul2 = BR(exp2( (rand2 - 0.5) * float(annealing_temperature) ));
                 mul3 = BR(1.LF) / (mul1 * mul2);  // Preserve volume
             
-                variation.layers[i].a = template_layers[i].a * mul1;
-                variation.layers[i].b = template_layers[i].b * mul2;
-                variation.layers[i].c = template_layers[i].c * mul3;
+                variations[idx].layers[i].a = template_layers[i].a * mul1;
+                variations[idx].layers[i].b = template_layers[i].b * mul2;
+                variations[idx].layers[i].c = template_layers[i].c * mul3;
             }
         }
         
         // ====================================================================
         // SCORE THE VARIATION
         // ====================================================================
-        compute_statistics(variation);
+        compute_statistics(variations[idx]);
         
-        // DIAGNOSTIC: Store what we read from template_layers
+        // DIAGNOSTIC: Store what we read AND what we wrote
         if (idx == 0) {
-            variation.total_energy = double(debug_read_a);
+            variations[idx].total_energy = double(debug_read_a);
+            variations[idx].angular_momentum = double(variations[idx].layers[0].a);  // What we wrote back
         } else {
-            variation.total_energy = BUFF_REAL(0.0);
+            variations[idx].total_energy = BUFF_REAL(0.0);
+            variations[idx].angular_momentum = BUFF_REAL(0.0);  // Clear for other threads
         }
         
         // Write output
-        variations[idx] = variation;
+        //variations[idx] = variation;
     }
     
     // ========================================================================
