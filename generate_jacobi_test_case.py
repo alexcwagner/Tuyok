@@ -37,9 +37,9 @@ def generate_test_case(a):
     ang_vel = np.sqrt((4/3) * np.pi * a * b * c / (a*a-b*b) 
                 * (a*a*elliprd(b*b, c*c, a*a) - b*b*elliprd(c*c, a*a, b*b)))
     
-    moi = (4/15)*np.pi*a*b*c
+    moi = (4/15)*np.pi*a*b*c * (a*a + b*b)
     
-    ang_mom = ang_vel / moi
+    ang_mom = ang_vel * moi
     
     
     

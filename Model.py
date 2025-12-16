@@ -204,31 +204,11 @@ class Model(dict):
     
             self.program._dump_source()
     
-    
-    
         if seed is None:
             seed = random.randint(0, 0xFFFFFFFF)
     
         input_bytes = self.to_struct()
-        input_array = np.frombuffer(input_bytes, dtype=np.uint8)
-        
-        # ============ ADD THIS DIAGNOSTIC HERE ============
-        print(f"\n=== INPUT BUFFER DIAGNOSTIC ===")
-        print(f"First layer 'a' value in Python: {self['layers'][0]['abc'][0]}")
-        print(f"Bytes at offset 16-23 (first layer 'a'): {input_bytes[16:24].hex()}")
-        a_from_bytes = struct.unpack('d', input_bytes[16:24])[0]
-        print(f"Reading those bytes as double: {a_from_bytes}")
-        print(f"Match? {a_from_bytes == self['layers'][0]['abc'][0]}")
-        
-        # Also check what float32 truncation looks like
-        truncated = np.float32(self['layers'][0]['abc'][0])
-        print(f"If this were truncated to float32: {truncated}")
-        print(f"================================\n")
-        # ==================================================
-        
-        
-        
-        
+        input_array = np.frombuffer(input_bytes, dtype=np.uint8)  
         
         # Calculate number of workgroups
         local_size = 256
@@ -275,40 +255,6 @@ class Model(dict):
         print(f"GPU compute: {(time_compute - time_start):.3f} seconds")
         
         results = self.program.run(buffers, uniforms, num_invocations=num_variants)
-
-        # DIAGNOSTIC: Check the raw bytes of the first result
-        print(f"\n=== RAW OUTPUT BUFFER BYTES ===")
-        raw_output = results[1]
-        print(f"Output buffer dtype: {raw_output.dtype}")
-        print(f"Output buffer itemsize: {raw_output.dtype.itemsize}")
-        print(f"First result raw bytes (first 64 bytes): {raw_output[0].tobytes()[:64].hex()}")
-        print("=" * 60)
-        
-        
-        
-        
-        
-        # DIAGNOSTIC: Check raw bytes of first result
-        if num_variants > 0:
-            raw_result = results[1][0]
-            print(f"\n=== DIAGNOSTIC: First result raw data ===")
-            print(f"  Temperature: {temperature}")
-            print(f"  GPU read template_layers[0].a as: {raw_result['total_energy']}")
-            print(f"  Input 'a' value: {self['layers'][0]['abc'][0]}")
-            print(f"  Output 'a' value: {raw_result['layers'][0]['a']}")
-            print(f"  Match? {abs(raw_result['layers'][0]['a'] - self['layers'][0]['abc'][0]) < 1e-10}")
-            
-            if abs(raw_result['total_energy'] - self['layers'][0]['abc'][0]) > 1e-10:
-                print(f"  ⚠️  GPU READ from template_layers has precision loss!")
-                print(f"     Expected: {self['layers'][0]['abc'][0]}")
-                print(f"     GPU read: {raw_result['total_energy']}")
-            
-            # Check the raw bytes
-            raw_bytes = raw_result.tobytes()
-            layer0_offset = 16  # offset to first layer
-            a_bytes = raw_bytes[layer0_offset:layer0_offset+8]
-            print(f"  Raw bytes for output 'a': {a_bytes.hex()}")
-            print(f"==========================================\n")
         
         # Get workgroup bests
         workgroup_models = results[2]
@@ -337,7 +283,7 @@ class Model(dict):
 if __name__ == '__main__':
     
     model = Model({
-        "angular_momentum": 1.2874789457385492,
+        "angular_momentum": 2.631558685805992,
         "layers": [
             {
                 "abc": [
@@ -346,7 +292,7 @@ if __name__ == '__main__':
                     0.6957740290368712
                 ],
                 "r": 1.0,
-                "density": 1.1
+                "density": 1.0
             }
         ]
     })

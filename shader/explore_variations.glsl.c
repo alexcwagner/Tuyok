@@ -28,26 +28,6 @@ struct Model {
     // Total size: 832 bytes
 };
 
-// struct Layer {
-//     double a;
-//     double b;
-//     double c;
-//     double r;
-//     double density;
-// };
-// 
-// struct Model {
-//     double angular_momentum;  // offset 0, 8 bytes
-//     uint num_layers;             // offset 8, 4 bytes
-//     // implicit 4 bytes padding to align array to 16-byte boundary
-//     Layer layers[20];            // offset 16, 800 bytes (20 × 40)
-//     
-//     double rel_equipotential_err;  // offset 816, 8 bytes
-//     double total_energy;           // offset 824, 8 bytes
-//     // Total size: 832 bytes
-// };
-
-
 // ============================================================================
 // Buffers
 // ============================================================================
@@ -96,72 +76,74 @@ shared BUFF_REAL local_best_score;
 // Statistics computation
 // ============================================================================
 
-void compute_statistics(inout Model model)
+void compute_statistics(uint idx)
 {
     bool valid = true;
     
     // Initialize error accumulator to zero
-    model.rel_equipotential_err = BR(0.0LF);
+    variations[idx].rel_equipotential_err = BR(0.0LF);
     
     // compute Moment of Inertia
     CALC_REAL moi = R(0.LF);    
-    for (uint idx = 0; idx < model.num_layers; idx++)
+    for (uint layer_idx = 0; layer_idx < variations[idx].num_layers; layer_idx++)
     {
-        //Layer layer = model.layers[idx];
-        moi += model.layers[idx].density 
-                * model.layers[idx].a 
-                * model.layers[idx].b 
-                * model.layers[idx].c 
-                * (model.layers[idx].a * model.layers[idx].a 
-                    + model.layers[idx].b * model.layers[idx].b);
+        //Layer layer = variations[idx].layers[layer_idx];
+        moi += variations[idx].layers[layer_idx].density 
+                * variations[idx].layers[layer_idx].a 
+                * variations[idx].layers[layer_idx].b 
+                * variations[idx].layers[layer_idx].c 
+                * (variations[idx].layers[layer_idx].a * variations[idx].layers[layer_idx].a 
+                    + variations[idx].layers[layer_idx].b * variations[idx].layers[layer_idx].b);
     }
     moi *= R(4.LF/15.LF) * PI;
     
     // compute Angular Velocity
-    CALC_REAL ang_vel = model.angular_momentum / moi;
+    CALC_REAL ang_vel = variations[idx].angular_momentum / moi;
     
     // Iterate through the layers to get the points we want to calculate the potential at
-    for (uint s_idx = 0; s_idx < model.num_layers; s_idx++)
+    for (uint surf_layer_idx = 0; surf_layer_idx < variations[idx].num_layers; surf_layer_idx++)
     {
-        //Layer surf_layer = model.layers[s_idx];
+        //Layer surf_layer = variations[idx].layers[surf_layer_idx];
     
         // accumulate the effective potential at (a,0,0), (0,b,0), and (0,0,c)
         // start with the centrifugal contribution before iterating through layers
-        CALC_REAL pot_a = R(-0.5LF) 
+        // (Note: Chandrasekhar convention is that these are positive. I'd argue with
+        // him, but sadly, he has passed on.)
+        CALC_REAL pot_a = R(0.5LF) 
                         * ang_vel * ang_vel 
-                        * model.layers[s_idx].a * model.layers[s_idx].a;
-        CALC_REAL pot_b = R(-0.5LF) 
+                        * variations[idx].layers[surf_layer_idx].a * variations[idx].layers[surf_layer_idx].a;
+        CALC_REAL pot_b = R(0.5LF) 
                         * ang_vel * ang_vel 
-                        * model.layers[s_idx].b * model.layers[s_idx].b;
+                        * variations[idx].layers[surf_layer_idx].b * variations[idx].layers[surf_layer_idx].b;
         CALC_REAL pot_c = 0.LF;
          
         // Iterate through the layers to get the ellipsoid creating a potential at the points
-        for (uint m_idx = 0; m_idx < model.num_layers; m_idx++)
+        for (uint mass_layer_idx = 0; mass_layer_idx < variations[idx].num_layers; mass_layer_idx++)
         {
-            //Layer mat_layer = model.layers[m_idx];
+            //Layer mat_layer = variations[idx].layers[mass_layer_idx];
             
-            if (s_idx <= m_idx)
+            if (surf_layer_idx <= mass_layer_idx)
             {
                 // The surface points will be inside or on the ellipsoid
                 
-                pot_a += model.layers[m_idx].density * 
+                pot_a += variations[idx].layers[mass_layer_idx].density * 
                                 potential_interior_x(
-                                        model.layers[m_idx].a, 
-                                        model.layers[m_idx].b, 
-                                        model.layers[m_idx].c, 
-                                        model.layers[s_idx].a);
-                pot_b += model.layers[m_idx].density *
+                                        variations[idx].layers[mass_layer_idx].a, 
+                                        variations[idx].layers[mass_layer_idx].b, 
+                                        variations[idx].layers[mass_layer_idx].c, 
+                                        variations[idx].layers[surf_layer_idx].a);
+                pot_b += variations[idx].layers[mass_layer_idx].density *
                                 potential_interior_y(
-                                        model.layers[m_idx].a, 
-                                        model.layers[m_idx].b, 
-                                        model.layers[m_idx].c, 
-                                        model.layers[s_idx].b);
-                pot_c += model.layers[m_idx].density * 
+                                        variations[idx].layers[mass_layer_idx].a, 
+                                        variations[idx].layers[mass_layer_idx].b, 
+                                        variations[idx].layers[mass_layer_idx].c, 
+                                        variations[idx].layers[surf_layer_idx].b);
+                pot_c += variations[idx].layers[mass_layer_idx].density * 
                                 potential_interior_z(
-                                        model.layers[m_idx].a, 
-                                        model.layers[m_idx].b, 
-                                        model.layers[m_idx].c, 
-                                        model.layers[s_idx].c);
+                                        variations[idx].layers[mass_layer_idx].a, 
+                                        variations[idx].layers[mass_layer_idx].b, 
+                                        variations[idx].layers[mass_layer_idx].c, 
+                                        variations[idx].layers[surf_layer_idx].c);
                 
             }
             else
@@ -170,38 +152,39 @@ void compute_statistics(inout Model model)
                 
                 // check for bad overlap
                 valid = valid 
-                        && (model.layers[s_idx].a > model.layers[m_idx].a) 
-                        && (model.layers[s_idx].b > model.layers[m_idx].b) 
-                        && (model.layers[s_idx].c > model.layers[m_idx].c);
+                        && (variations[idx].layers[surf_layer_idx].a > variations[idx].layers[mass_layer_idx].a) 
+                        && (variations[idx].layers[surf_layer_idx].b > variations[idx].layers[mass_layer_idx].b) 
+                        && (variations[idx].layers[surf_layer_idx].c > variations[idx].layers[mass_layer_idx].c);
                 
-                pot_a += model.layers[m_idx].density * 
+                pot_a += variations[idx].layers[mass_layer_idx].density * 
                                 potential_exterior_x(
-                                        model.layers[m_idx].a, 
-                                        model.layers[m_idx].b, 
-                                        model.layers[m_idx].c, 
-                                        model.layers[s_idx].a);
-                pot_b += model.layers[m_idx].density *
+                                        variations[idx].layers[mass_layer_idx].a, 
+                                        variations[idx].layers[mass_layer_idx].b, 
+                                        variations[idx].layers[mass_layer_idx].c, 
+                                        variations[idx].layers[surf_layer_idx].a);
+                pot_b += variations[idx].layers[mass_layer_idx].density *
                                 potential_exterior_y(
-                                        model.layers[m_idx].a, 
-                                        model.layers[m_idx].b, 
-                                        model.layers[m_idx].c, 
-                                        model.layers[s_idx].b);
-                pot_c += model.layers[m_idx].density * 
+                                        variations[idx].layers[mass_layer_idx].a, 
+                                        variations[idx].layers[mass_layer_idx].b, 
+                                        variations[idx].layers[mass_layer_idx].c, 
+                                        variations[idx].layers[surf_layer_idx].b);
+                pot_c += variations[idx].layers[mass_layer_idx].density * 
                                 potential_exterior_z(
-                                        model.layers[m_idx].a, 
-                                        model.layers[m_idx].b, 
-                                        model.layers[m_idx].c, 
-                                        model.layers[s_idx].c);
+                                        variations[idx].layers[mass_layer_idx].a, 
+                                        variations[idx].layers[mass_layer_idx].b, 
+                                        variations[idx].layers[mass_layer_idx].c, 
+                                        variations[idx].layers[surf_layer_idx].c);
             }
         }
         
         CALC_REAL max_pot = max(pot_a, max(pot_b, pot_c));
         CALC_REAL min_pot = min(pot_a, min(pot_b, pot_c));
       
-        model.rel_equipotential_err += (max_pot - min_pot) / min_pot;  
+        variations[idx].rel_equipotential_err += (max_pot - min_pot) / min_pot;  
     }
     
-    model.rel_equipotential_err = valid ? model.rel_equipotential_err / model.num_layers : BR(1e30LF);
+    variations[idx].rel_equipotential_err = valid ? variations[idx].rel_equipotential_err / variations[idx].num_layers : BR(1e30LF);
+    variations[idx].total_energy = BUFF_REAL(0.0);
     
     return;
 }
@@ -275,19 +258,8 @@ void main() {
         // ====================================================================
         // SCORE THE VARIATION
         // ====================================================================
-        compute_statistics(variations[idx]);
+        compute_statistics(idx);
         
-        // DIAGNOSTIC: Store what we read AND what we wrote
-        if (idx == 0) {
-            variations[idx].total_energy = double(debug_read_a);
-            variations[idx].angular_momentum = double(variations[idx].layers[0].a);  // What we wrote back
-        } else {
-            variations[idx].total_energy = BUFF_REAL(0.0);
-            variations[idx].angular_momentum = BUFF_REAL(0.0);  // Clear for other threads
-        }
-        
-        // Write output
-        //variations[idx] = variation;
     }
     
     // ========================================================================
