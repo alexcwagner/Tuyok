@@ -158,4 +158,25 @@ CALC_REAL potential_surface_z(CALC_REAL a, CALC_REAL b, CALC_REAL c)
     return potential_interior_z(a, b, c, c);
 }
 
+
+CALC_REAL layer_potential_energy(CALC_REAL a, CALC_REAL b, CALC_REAL c, CALC_REAL density)
+{
+    CALC_REAL a2 = a * a;
+    CALC_REAL b2 = b * b;
+    CALC_REAL c2 = c * c;
+    CALC_REAL abc = a * b * c;
+    
+    // I_0 = 2 * a * b * c * R_F(a², b², c²)
+    CALC_REAL I0 = R(2.0LF) * abc * carlson_rf(a2, b2, c2);
+    
+    // PE = -(4π²/5) × G × ρ² × (abc)² × R_F(a², b², c²)
+    // Since R_F appears in I0, and I0 = 2abc × R_F:
+    // PE = -(2π²/5) × G × ρ² × abc × I0
+    
+    CALC_REAL PE = -R(2.0LF * PI * PI / 5.0LF) * density * density * abc * I0;
+    
+    return PE;
+}
+
+
 #endif

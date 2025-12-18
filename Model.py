@@ -27,10 +27,18 @@ class Model(dict):
     _model_dtype = np.dtype([
         ('angular_momentum', np.float64),  # offset 0
         ('num_layers', np.uint32),         # offset 8
-        ('_pad_to_16', np.uint32),         # offset 12 (4 bytes padding for std430 alignment)
+        ('_pad_to_16', np.uint32),         # offset 12
         ('layers', _layer_dtype, (20,)),   # offset 16
         ('rel_equipotential_err', np.float64),  # offset 816
         ('total_energy', np.float64),      # offset 824
+        ('angular_velocity', np.float64),  # offset 832
+        ('moment_of_inertia', np.float64), # offset 840
+        ('potential_energy', np.float64),  # offset 848
+        ('kinetic_energy', np.float64),    # offset 856
+        ('virial_ratio', np.float64),      # offset 864
+        ('padding_sentinel', np.float64),  # offset 872
+        ('score', np.float64),             # offset 880
+        # Total: 888 bytes
     ])
     
     def __init__(self, *args, **kwargs):
@@ -66,7 +74,13 @@ class Model(dict):
                 } for layer in s['layers'][:num_layers]
             ],
             'rel_equipotential_err': s['rel_equipotential_err'],
-            'total_energy': s['total_energy']
+            'total_energy': s['total_energy'],
+            'angular_velocity': s['angular_velocity'],
+            'moment_of_inertia': s['moment_of_inertia'],
+            'potential_energy': s['potential_energy'],
+            'kinetic_energy': s['kinetic_energy'],
+            'virial_ratio': s['virial_ratio'],
+            'padding_sentinel': s['padding_sentinel']
         }
         return model
     
@@ -77,7 +91,7 @@ class Model(dict):
                                   self["angular_momentum"],
                                   len(self["layers"])
                                   )
-        input_bytes += b'\x00' * 4  # 4 bytes padding to reach offset 16 (std430 alignment)
+        input_bytes += b'\x00' * 4  # 4 bytes padding to reach offset 16
         
         # Layers: 40 bytes each × 20 = 800 bytes (offsets 16-815)
         for i in range(20):
@@ -95,13 +109,28 @@ class Model(dict):
                 # Pad unused layer slots with zeros
                 input_bytes += b'\x00' * 40
         
-        # Output fields: 16 bytes total (offsets 816-831)
+        # Output fields: 64 bytes total (offsets 816-879)
         rel_equipotential_err = self.get('rel_equipotential_err', 0.0)
         total_energy = self.get('total_energy', 0.0)
-        input_bytes += struct.pack('dd',  # 2 doubles = 16 bytes
+        angular_velocity = self.get('angular_velocity', 0.0)
+        moment_of_inertia = self.get('moment_of_inertia', 0.0)
+        potential_energy = self.get('potential_energy', 0.0)
+        kinetic_energy = self.get('kinetic_energy', 0.0)
+        virial_ratio = self.get('virial_ratio', 0.0)
+        
+        # Sentinel value: pi to max precision
+        padding_sentinel = 3.14159265358979323846
+        
+        input_bytes += struct.pack('dddddddd',  # 8 doubles = 64 bytes
                                    rel_equipotential_err,
-                                   total_energy)
-
+                                   total_energy,
+                                   angular_velocity,
+                                   moment_of_inertia,
+                                   potential_energy,
+                                   kinetic_energy,
+                                   virial_ratio,
+                                   padding_sentinel)
+    
         return input_bytes
     
     def dump_struct_hex(self, data_bytes=None):
@@ -135,15 +164,33 @@ class Model(dict):
             print(f"    a={a}, b={b}, c={c}, r={r}, density={density}")
         
         # Output fields
-        print("\nOutput fields (16 bytes):")
+        print("\nOutput fields (64 bytes):")
         print(f"  816-823 rel_equipotential_err: {data_bytes[816:824].hex()}")
         ree = struct.unpack('d', data_bytes[816:824])[0]
         print(f"          = {ree}")
         print(f"  824-831 total_energy: {data_bytes[824:832].hex()}")
         te = struct.unpack('d', data_bytes[824:832])[0]
         print(f"          = {te}")
+        print(f"  832-839 angular_velocity: {data_bytes[832:840].hex()}")
+        av = struct.unpack('d', data_bytes[832:840])[0]
+        print(f"          = {av}")
+        print(f"  840-847 moment_of_inertia: {data_bytes[840:848].hex()}")
+        moi = struct.unpack('d', data_bytes[840:848])[0]
+        print(f"          = {moi}")
+        print(f"  848-855 potential_energy: {data_bytes[848:856].hex()}")
+        pe = struct.unpack('d', data_bytes[848:856])[0]
+        print(f"          = {pe}")
+        print(f"  856-863 kinetic_energy: {data_bytes[856:864].hex()}")
+        ke = struct.unpack('d', data_bytes[856:864])[0]
+        print(f"          = {ke}")
+        print(f"  864-871 virial_ratio: {data_bytes[864:872].hex()}")
+        vr = struct.unpack('d', data_bytes[864:872])[0]
+        print(f"          = {vr}")
+        print(f"  872-879 padding_sentinel: {data_bytes[872:880].hex()}")
+        ps = struct.unpack('d', data_bytes[872:880])[0]
+        print(f"          = {ps} (should be π)")
         print("=" * 70)
-    
+            
     def dump_numpy_struct(self, numpy_array):
         """
         Dump a numpy structured array (as returned from GPU) for debugging.
@@ -161,7 +208,13 @@ class Model(dict):
                   f"c={numpy_array['layers'][0][1]['c']}")
         print(f"  rel_equipotential_err: {numpy_array['rel_equipotential_err']}")
         print(f"  total_energy: {numpy_array['total_energy']}")
-        print("=" * 70)
+        print(f"  angular_velocity: {numpy_array['angular_velocity']}")
+        print(f"  moment_of_inertia: {numpy_array['moment_of_inertia']}")
+        print(f"  potential_energy: {numpy_array['potential_energy']}")
+        print(f"  kinetic_energy: {numpy_array['kinetic_energy']}")
+        print(f"  virial_ratio: {numpy_array['virial_ratio']}")
+        print(f"  padding_sentinel: {numpy_array['padding_sentinel']} (should be π)")
+        print("=" * 70)  
         
     def dump_raw_bytes(self, raw_bytes, label="Raw bytes"):
         """
@@ -169,7 +222,7 @@ class Model(dict):
         """
         print(f"\n{label} ({len(raw_bytes)} bytes):")
         print("=" * 70)
-        for i in range(0, min(len(raw_bytes), 832), 16):
+        for i in range(0, min(len(raw_bytes), 880), 16):
             hex_str = ' '.join(f'{b:02x}' for b in raw_bytes[i:i+16])
             print(f"  {i:4d}: {hex_str}")
             if i == 0:
@@ -178,6 +231,8 @@ class Model(dict):
                 print("        ^ layers start")
             elif i == 816:
                 print("        ^ output fields")
+            elif i == 864:
+                print("        ^ virial_ratio")
         print("=" * 70)
     
     def explore_variations(self, num_variants, temperature, top_k=None, seed=None):
@@ -202,7 +257,7 @@ class Model(dict):
             self.program = harness.create_program("shader/explore_variations.glsl.c", config)
             self._shader_initialized = True
     
-            self.program._dump_source()
+            #self.program._dump_source()
     
         if seed is None:
             seed = random.randint(0, 0xFFFFFFFF)
@@ -272,7 +327,8 @@ class Model(dict):
         # If user wants top_k > 1, sort full results
         if top_k > 1:
             raw_results = results[1]
-            raw_results.sort(order='rel_equipotential_err')
+            #raw_results.sort(order='rel_equipotential_err')
+            raw_results.sort(order='score')
             top_models = [Model.from_struct(v) for v in raw_results[:top_k]]
             time_sort = time.time()
             print(f"Sort and convert top {top_k}: {(time_sort - time_best):.3f} seconds")
